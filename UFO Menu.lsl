@@ -57,11 +57,11 @@ sayDebug(string message)
 
 sendJSON(string jsonKey, string value, key avatarKey){
     sayDebug("sendJSON("+jsonKey+", "+value+")");
-    llMessageLinked(LINK_THIS, 0, llList2Json(JSON_OBJECT, [jsonKey, value]), avatarKey);
+    llMessageLinked(LINK_SET, 0, llList2Json(JSON_OBJECT, [jsonKey, value]), avatarKey);
 }
 
 sendJSONinteger(string jsonKey, integer value, key avatarKey){
-    llMessageLinked(LINK_THIS, 0, llList2Json(JSON_OBJECT, [jsonKey, (string)value]), avatarKey);
+    llMessageLinked(LINK_SET, 0, llList2Json(JSON_OBJECT, [jsonKey, (string)value]), avatarKey);
 }
 
 string getJSONstring(string jsonValue, string jsonKey, string valueNow){
@@ -206,19 +206,19 @@ doMainMenu(integer CHANNEL, string name, key id, string msg) {
         }
         else if (msg == "Open Top") 
         {
-            llMessageLinked(LINK_ALL_CHILDREN, 0, "Open Top", "");
+            sendJSON("Cupola", "Open", id);
         }
         else if (msg == "Close Top") 
         {
-            llMessageLinked(LINK_ALL_CHILDREN, 0, "Close Top", "");
+            sendJSON("Cupola", "Close", id);
         }
         else if (msg == "Open Bottom") 
         {
-            llMessageLinked(LINK_ALL_CHILDREN, 0, "Open Bottom", "");
+            sendJSON("Bottom", "Open", id);
         }
         else if (msg == "Close Bottom") 
         {
-            llMessageLinked(LINK_ALL_CHILDREN, 0, "Close Bottom", "");
+            sendJSON("Bottom", "Close", id);
         }
        else if (msg == menuFlight) 
         {
@@ -296,21 +296,11 @@ default
 
     link_message(integer sender_num, integer num, string msg, key id) 
     {
-        if (msg == "Hatch Top") {
-            if (num == 1) {
-                gHatchTopState = OPEN;
-            } else {
-                gHatchTopState = CLOSED;
-            }
-        }
-        if (msg == "Hatch Bottom") {
-            if (num == 1) {
-                gHatchBottomState = OPEN;
-            } else {
-                gHatchBottomState = CLOSED;
-            }
-        }
-    } // end link_message
+        sayDebug("link_message("+(string)msg+")");
+        gHatchTopState = getJSONinteger(msg, "CupolaIs", gHatchTopState);
+        gHatchBottomState = getJSONinteger(msg, "BottomIs", gHatchBottomState);
+    }
+
 
     timer()
     {
