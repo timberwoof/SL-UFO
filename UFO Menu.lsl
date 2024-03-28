@@ -7,8 +7,28 @@
 // And door or hatch should receive those link messages
 // and respond appropriately. 
 
-integer gMenuChannel = 0;
-integer gMenuListen;
+string version = "2024-03-27";
+integer OPTION_DEBUG = TRUE;
+
+integer menuChannel = 0;
+integer menuListen = 0;
+string menuIdentifier;
+key menuAgentKey;
+
+string menuMain = "Main";
+string menuFlight = "Flight";
+string menuAuto = "Auto";
+string menuGrab = "Grab";
+string menuRelease = "Release";
+string menuDebug = "Debug";
+string menuReport = "Report";
+
+string buttonBlank = " ";
+
+string menuView = "View";
+string buttonViewThird = "Third";
+string buttonViewPilot = "Pilot";
+string buttonViewDown = "Down";
 
 string gSoundgWhiteNoise = "9bc5de1c-5a36-d5fa-cdb7-8ef7cbc93bdc";
 string gHumSound = "46157083-3135-fb2a-2beb-0f2c67893907";
@@ -27,27 +47,41 @@ float humVolume=1.0;
 string instructionNote = "Orbital Prisoner Transport Shuttle";
 key id;
 
-
-help()
+sayDebug(string message)
 {
-    llWhisper(0,"Main Menu:");
-    llWhisper(0,"Open/Close Hatch: opens or closes pilot hatch");
-    llWhisper(0,"Fly: manual flight mode");
-    llWhisper(0,"Report: reports location and attitude");
-    llWhisper(0,"View:Pilot: sets eyepoint to pilot's view (do this before sitting)");
-    llWhisper(0,"View:3rd: sets eyepoint to 3rd person view (do this before sitting)");
-    llWhisper(0," ");
-    llWhisper(0,"Flight Menu:");
-    llWhisper(0,"Stop: Stops the ship where you are, returns to Main Menu.");
-    llWhisper(0,"Report: reports location and attitude");
-    llWhisper(0,"__%: Sets power level. Use low power near station.");
-    llWhisper(0," ");
-    llWhisper(0,"Flight Commands:");
-    llWhisper(0,"PgUp or PgDn = Gain or lose altitude");
-    llWhisper(0,"Arrow keys = Left, right, Forwards and Back");
-    llWhisper(0,"Shift + Left or Right arrow = Rotate but maintain view");
-    llWhisper(0,"PgUp + PgDn or combination similar = Set cruise on or off");
+    if (OPTION_DEBUG)
+    {
+        llOwnerSay("UFO Menu: "+message);
+    }
 }
+
+sendJSON(string jsonKey, string value, key avatarKey){
+    sayDebug("sendJSON("+jsonKey+", "+value+")");
+    llMessageLinked(LINK_THIS, 0, llList2Json(JSON_OBJECT, [jsonKey, value]), avatarKey);
+}
+
+sendJSONinteger(string jsonKey, integer value, key avatarKey){
+    llMessageLinked(LINK_THIS, 0, llList2Json(JSON_OBJECT, [jsonKey, (string)value]), avatarKey);
+}
+
+string getJSONstring(string jsonValue, string jsonKey, string valueNow){
+    string result = valueNow;
+    string value = llJsonGetValue(jsonValue, [jsonKey]);
+    if (value != JSON_INVALID) {
+        result = value;
+    }
+    return result;
+}
+
+integer getJSONinteger(string jsonValue, string jsonKey, integer valueNow){
+    integer result = valueNow;
+    string value = llJsonGetValue(jsonValue, [jsonKey]);
+    if (value != JSON_INVALID) {
+        result = (integer)value;
+    }
+    return result;
+}
+
 
 report() {
     vector vPosition = llGetPos();
@@ -58,9 +92,89 @@ report() {
     llWhisper(0,llReplaceSubString(sPosition, " ", "", 0)+";"+llReplaceSubString(sOrientation, " ", "", 0)+";10;");
 }
 
+setUpMenu(string identifier, key avatarKey, string message, list buttons)
+// wrapper to do all the calls that make a simple menu dialog.
+// - adds required buttons such as Close or Main
+// - displays the menu command on the alphanumeric display
+// - sets up the menu channel, listen, and timer event
+// - calls llDialog
+// parameters:
+// identifier - sets menuIdentifier, the later context for the command
+// avatarKey - uuid of who clicked
+// message - text for top of blue menu dialog
+// buttons - list of button texts
+{
+    sayDebug("setUpMenu "+identifier+" "+llKey2Name(avatarKey)+" "+message);
+
+    if (identifier != menuMain) {
+        buttons += [menuMain];
+    }
+    buttons += ["Close"];
+
+    sendJSON("DisplayTemp", "menu access", avatarKey);
+    menuIdentifier = identifier;
+    menuAgentKey = avatarKey; // remember who clicked
+    menuChannel = -(llFloor(llFrand(10000)+1000));
+    menuListen = llListen(menuChannel, "", avatarKey, "");
+    llSetTimerEvent(30);
+    llDialog(avatarKey, message, buttons, menuChannel);
+}
+
+tearDownMenu() {
+    llListenRemove(menuListen);
+    menuListen = 0;
+    menuChannel = 0;
+    llSetTimerEvent(0);
+}
+
+string menuCheckbox(string title, integer onOff)
+// make checkbox menu item out of a button title and boolean state
+{
+    string checkbox;
+    if (onOff)
+    {
+        checkbox = "☒";
+    }
+    else
+    {
+        checkbox = "☐";
+    }
+    return checkbox + " " + title;
+}
+
+list menuRadioButton(string title, string match)
+// make radio button menu item out of a button and the state text
+{
+    string radiobutton;
+    if (title == match)
+    {
+        radiobutton = "●";
+    }
+    else
+    {
+        radiobutton = "○";
+    }
+    return [radiobutton + " " + title];
+}
+
+list menuButtonActive(string title, integer onOff)
+// make a menu button be the text or the Inactive symbol
+{
+    string button;
+    if (onOff)
+    {
+        button = title;
+    }
+    else
+    {
+        button = "["+title+"]";
+    }
+    return [button];
+}
+
 mainMenu(key pilot) {
             string message = "Select Flight Command";
-            list buttons = ["Help"];
+            list buttons = [menuFlight, menuAuto, buttonBlank];
             
             if (gHatchTopState == CLOSED){
                 buttons += ["Open Top"];
@@ -72,34 +186,21 @@ mainMenu(key pilot) {
             } else {
                 buttons += ["Close Bottom"];
             }
+            buttons += [buttonBlank];
             
-            buttons += ["View:Pilot","View:3rd"];
+            buttons += [menuView, menuGrab, menuRelease];
+            buttons += [menuReport];   
             
-            buttons += ["Fly Manual"];      
-            buttons += ["Flight Plan"];   
-            buttons += ["Report"];   
-            
-            gMenuChannel = -(integer)llFrand(8999)+1000;
-            gMenuListen = llListen(gMenuChannel, "", llDetectedKey(0), "" );
-            llDialog(llDetectedKey(0), message, buttons, gMenuChannel);
-            llSetTimerEvent(30); 
+            setUpMenu(menuMain, pilot, message, buttons); 
 }
 
 doMainMenu(integer CHANNEL, string name, key id, string msg) {
-        llSay(0,"listen "+msg);
-        if (msg == "Help") 
+        sayDebug("listen "+msg);
+        if (msg == menuView) 
         {
-            help();
+            viewMenu(id);
         }
-        else if (msg == "View:Pilot") 
-        {
-            // *** send message to View script
-        }
-        else if (msg == "View:3rd") 
-        {
-            // *** send message to View script
-        }
-        else if (msg == "Report") 
+        else if (msg == menuReport) 
         {
                 report();
         }
@@ -119,16 +220,12 @@ doMainMenu(integer CHANNEL, string name, key id, string msg) {
         {
             llMessageLinked(LINK_ALL_CHILDREN, 0, "Close Bottom", "");
         }
-        else if (msg == "Stop") 
-        {
-            help();
-        }
-        else if (msg == "Fly Manual") 
+       else if (msg == menuFlight) 
         {
             Pilot = id;
             // *** send message to flying
         }
-        else if (msg == "Flight Plan") 
+        else if (msg == menuAuto) 
         {
             // *** send message to automated flight script
             //automatedFlightPlansMenu(id);
@@ -139,17 +236,27 @@ doMainMenu(integer CHANNEL, string name, key id, string msg) {
         }
         else 
         {
+            sayDebug("Unhandled main menu item:"+msg);
             llMessageLinked(LINK_ALL_CHILDREN, 0, msg, "");
         } 
 }
 
+viewMenu(key pilot) {
+    string message = "Select Pilot View";
+    list buttons = [buttonViewPilot, buttonViewThird, buttonViewDown];
+    setUpMenu(menuView, pilot, message, buttons); 
+}
 
+doViewMenu(integer CHANNEL, string name, key id, string msg) {
+    sayDebug("doViewMenu "+msg);
+    sendJSON("View", msg, id);
+}
 
 default
 {
     state_entry()
     {
-        llSay(0, "Hello, Avatar!");
+        sayDebug("MainMenu: state_entry");
         gOwnerKey = llGetOwner();
         gOwnerName = llKey2Name(llGetOwner());
         
@@ -166,7 +273,7 @@ default
 
     touch_start(integer total_number)
     {
-        llSay(0, "Touched.");
+        sayDebug("touch_start.");
         key pilot = llDetectedKey(0);
         if (llSameGroup(pilot))
         {
@@ -179,7 +286,12 @@ default
     }
     
     listen(integer CHANNEL, string name, key id, string msg) {
-        doMainMenu(CHANNEL, name, id, msg);
+        sayDebug("listen menuIdentifier:"+menuIdentifier+" msg:"+msg);
+        if (menuIdentifier == menuMain) {
+            doMainMenu(CHANNEL, name, id, msg);
+        } else if (menuIdentifier = menuView) {
+            doViewMenu(CHANNEL, name, id, msg);
+        }
     }
 
     link_message(integer sender_num, integer num, string msg, key id) 
@@ -199,4 +311,9 @@ default
             }
         }
     } // end link_message
+
+    timer()
+    {
+        tearDownMenu();
+    }
 }
