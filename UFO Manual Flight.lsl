@@ -63,8 +63,6 @@ integer getJSONinteger(string jsonValue, string jsonKey, integer valueNow){
     return result;
 }
 
-
-
 travelTo(list destinationsList){
     while (llGetListLength(destinationsList) > 0) {
         vector NextCoord = llList2Vector(destinationsList,0);
@@ -271,13 +269,17 @@ state StateFlying
     link_message(integer sender_num, integer num, string msg, key id) 
     {
         sayDebug("StateFlying link_message("+(string)msg+")");
-        integer_increment = getJSONinteger(msg, "Increment", integer_increment);
-        if (integer_increment >= 0) {
-            TARGET_INCREMENT = integer_increment / 100.0;
-            llWhisper(0,"Power: " + llGetSubString((string)(TARGET_INCREMENT * 10.0),0,3) + "%");
-        } else {
-            sayDebug("StateFlying setting state default");
-            state default;
+        integer old_increment = integer_increment;
+        integer_increment = getJSONinteger(msg, "Increment", old_increment);
+        if (integer_increment != old_increment) {
+            if (integer_increment >= 0) {
+                TARGET_INCREMENT = integer_increment / 100.0;
+                sayDebug("StateFlying link_message integer_increment:"+(string)integer_increment+" TARGET_INCREMENT:"+(string)TARGET_INCREMENT);
+                llWhisper(0,"Power: " + llGetSubString((string)(TARGET_INCREMENT * 100.0),0,3) + "%");
+            } else {
+                sayDebug("StateFlying link_message setting state default");
+                state default;
+            }
         }
     }
 
