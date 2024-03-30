@@ -20,6 +20,7 @@ string MANUAL = "Manual";
 string PILOT = "Pilot";
 string RELEASE = "Release";
 string REPORT = "Report";
+string SCAN = "Scan";
 string SETFLIGHT = "SetFlight";
 string THIRD = "Third";
 string VIEW = "View";
@@ -48,6 +49,11 @@ key Pilot;
 float humVolume=1.0;
 string instructionNote = "Orbital Prisoner Transport Shuttle";
 key id;
+
+list scan_target_names;
+list scan_target_keys;
+list passenger_names;
+list passenger_keys;
 
 sayDebug(string message)
 {
@@ -166,11 +172,11 @@ list menuButtonActive(string title, integer onOff)
 
 mainMenu(key pilot) {
     string message = "UFO Main Menu:\nSelect Command";
-    list buttons = [MANUAL, AUTO, BLANK];
+    list buttons = [MANUAL, AUTO, VIEW];
     if (gHatchTopState == CLOSED){
-        buttons += ["Open Top"];
+        buttons += ["Open Cupola"];
     } else {
-        buttons += ["Close Top"];
+        buttons += ["Close Cupola"];
     }
     if (gHatchBottomState == CLOSED){
         buttons += ["Open Bottom"];
@@ -178,7 +184,7 @@ mainMenu(key pilot) {
         buttons += ["Close Bottom"];
     }
     buttons += [BLANK];
-    buttons += [VIEW, GRAB, RELEASE];
+    buttons += [SCAN, GRAB, RELEASE];
     buttons += [REPORT];           
     setUpMenu(MAIN, pilot, message, buttons); 
 }
@@ -190,14 +196,22 @@ doMainMenu(integer CHANNEL, string name, key id, string msg) {
         viewMenu(id);
     } else if (msg == REPORT) {
         report();
-    } else if (msg == "Open Top") {
+    } else if (msg == "Open Cupola") {
         sendJSON("Cupola", "Open", id);
-    } else if (msg == "Close Top") {
+    } else if (msg == "Close Cupola") {
         sendJSON("Cupola", "Close", id);
     } else if (msg == "Open Bottom") {
         sendJSON("Bottom", "Open", id);
     } else if (msg == "Close Bottom") {
         sendJSON("Bottom", "Close", id);
+    } else if (msg == SCAN) {
+        scan_target_names = [];
+        scan_target_keys = [];
+        llSensor("",NULL_KEY, AGENT, 20, PI);  
+    } else if (msg == GRAB) {
+        grabMenu(id);
+    } else if (msg == RELEASE) {
+        releaseMenu(id);
     } else if (msg == MANUAL) {
         Flight = MANUAL;
         sendJSON(SETFLIGHT, MANUAL, id);
@@ -256,16 +270,42 @@ doFlightMenu(integer CHANNEL, string name, key id, string msg) {
     sendJSONinteger("Increment",integer_increment, id);
 }
 
-autoMenu() {
+autoMenu(key pilot) {
 }
 
-doAutoMenu(string msg) {
+doAutoMenu(integer CHANNEL, string name, key id, string msg) {
     // This needs to go into automated flihght 
     // because sening dynamic menu contents back and forth
     // is complicated
     if (llSubStringIndex(msg, "Plan") > -1) {
         //readFlightPlan((integer)llGetSubString(msg, 5, -1));
     }
+}
+
+grabMenu(key pilot) {
+    string message = "Select Your Victim:";
+    list buttons = [];
+    integer i = 0;
+    for (i = 0; i < llGetListLength(scan_target_names); i = i + 1) {
+        message = message + "\n" + (string)i + " " + llList2String(scan_target_names, i);
+        buttons = buttons + [(string)i];
+    }
+    setUpMenu(GRAB, pilot, message, buttons); 
+}
+
+releaseMenu(key pilot) {
+    string message = "Select Passenger to Release:";
+    list buttons = [];
+    integer i = 0;
+    for (i = 0; i < llGetListLength(passenger_names); i = i + 1) {
+        message = message + "\n" + (string)i + " " + llList2String(passenger_names, i);
+        buttons = buttons + [(string)i];
+    }
+    setUpMenu(RELEASE, pilot, message, buttons); 
+}
+
+doReleaseMenu(integer CHANNEL, string name, key id, string msg) {
+    sendJSON(RELEASE, "Open", id);
 }
 
 default
@@ -279,6 +319,11 @@ default
         
         llPreloadSound(gHumSound);
         llLoopSound(gHumSound, humVolume);
+        
+        scan_target_names = ["Huey","Dewey","Louie"];
+        scan_target_keys = [NULL_KEY,NULL_KEY,NULL_KEY];
+        passenger_names = ["Dewey","Cheatham","Howe"];
+        passenger_keys = [NULL_KEY,NULL_KEY,NULL_KEY];
 
         // mass compensator
         float mass = llGetMass(); // mass of this object
@@ -312,6 +357,10 @@ default
             doViewMenu(CHANNEL, name, id, msg);
         } else if (menuIdentifier == MANUAL) {
             doFlightMenu(CHANNEL, name, id, msg);
+        } else if (menuIdentifier == GRAB) {
+            sendJSON(GRAB, llList2String(scan_target_keys, (integer)msg), id);
+        } else if (menuIdentifier == RELEASE) {
+            sendJSON(RELEASE, llList2String(passenger_keys, (integer)msg), id);
         } 
     }
 
@@ -322,6 +371,16 @@ default
         gHatchBottomState = getJSONinteger(msg, "BottomIs", gHatchBottomState);
     }
 
+    sensor(integer avatars_found) {
+        integer i;
+        for (i = 0; i < avatars_found; i = i + 1) {
+            key target = llDetectedKey(i);
+            string name = llGetDisplayName(target);
+            scan_target_keys = scan_target_keys + [(string)target];
+            scan_target_names = scan_target_names + [name];
+        }
+        llWhisper(0,(string)i+" tagrets detected.");
+    }
 
     timer()
     {
