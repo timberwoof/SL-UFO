@@ -63,7 +63,7 @@ setPilotView(string viewName) {
         CAMERA_FOCUS_OFFSET, cameraFocusOffset, // position of the cameas
         CAMERA_POSITION_LAG, 0.1, //(0 to 3) seconds
         CAMERA_FOCUS_LAG, 0.1 , //(0 to 3) seconds
-        CAMERA_BEHINDNESS_ANGLE, 20.0, //(0 to 180) degrees
+        CAMERA_BEHINDNESS_ANGLE, 5.0, //(0 to 180) degrees
         CAMERA_BEHINDNESS_LAG, 0.0, //(0 to 3) seconds
         CAMERA_POSITION_THRESHOLD, 0.0, //(0 to 4) meters
         CAMERA_FOCUS_THRESHOLD, 0.0, //(0 to 4) meters
@@ -77,14 +77,14 @@ setPilotView(string viewName) {
 
 // ====================================================================================================
 // Stop all animations
-stop_anims( key agent )
+stop_anims(key agent)
 {
-    list    l = llGetAnimationList( agent );
-    integer    lsize = llGetListLength( l );
+    list    l = llGetAnimationList(agent);
+    integer    lsize = llGetListLength(l);
     integer i;
-    for ( i = 0; i < lsize; i++ )
+    for (i = 0; i <lsize; i++)
     {
-        llStopAnimation( llList2Key( l, i ) );
+        llStopAnimation(llList2Key(l, i));
     }
 }
 
@@ -95,7 +95,9 @@ default
     {
         llSetSitText("Pilot");
         // vertical, forward/back, left/right
-        llSitTarget(<0.3, 0.0, -0.25> , llEuler2Rot(<0.0, 0.0, 0.0> * DEG_TO_RAD));
+        // <0.3, 0.0, -0.25>
+        // 
+        llSitTarget(<0.0, 0.2, -0.4> , llEuler2Rot(<0.0, -90.0, 90.0> * DEG_TO_RAD));
         
         initCamera();
     }
@@ -106,12 +108,12 @@ default
         if (pilotPermissions & PERMISSION_TRIGGER_ANIMATION)
         {
             key agent = llGetPermissionsKey();
-            if ( llGetAgentSize( agent ) != ZERO_VECTOR )
+            if (llGetAgentSize(agent) != ZERO_VECTOR)
             { // agent is still in the sim.
                 // Sit the agent
                 sayDebug("run_time_permissions sit");
-                stop_anims( agent );
-                llStartAnimation( "Sit" );
+                stop_anims(agent);
+                llStartAnimation("Sit");
                 sendJSON("Pilot", (string)agent, agent);
             }
         }
@@ -125,26 +127,25 @@ default
     changed(integer change) 
     {
 
-        if (change & CHANGED_LINK)
-        {    // Someone sat or stood up ...
+        if (change & CHANGED_LINK) { 
+            // Someone sat or stood up ...
         
             // get who sat
             key agent = llAvatarOnSitTarget();
-            if (agent)            
-            {    // Sat down
+            if (agent) {
+                // Sat down
                 llRequestPermissions(agent, PERMISSION_TRIGGER_ANIMATION | PERMISSION_CONTROL_CAMERA);
-            }
-            else
-            {    // Stood up ( or maybe crashed! )
+            } else {
+                // Stood up (or maybe crashed!)
                 
                 // Get agent to whom permissions were granted
                 agent = llGetPermissionsKey();
-                if ( llGetAgentSize( agent ) != ZERO_VECTOR )
-                { // agent is still in the sim.
+                if (llGetAgentSize(agent) != ZERO_VECTOR) { 
+                    // agent is still in the sim.
                     
-                    if ( llGetPermissions() & PERMISSION_TRIGGER_ANIMATION )
-                    {    // Only stop anis if permission was granted previously.
-                        stop_anims( agent );
+                    if (llGetPermissions() & PERMISSION_TRIGGER_ANIMATION) {    
+                        // Only stop anis if permission was granted previously.
+                        stop_anims(agent);
                     }
                     //llResetScript();
                 }
