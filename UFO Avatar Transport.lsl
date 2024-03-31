@@ -19,6 +19,10 @@ vector avatarDirection;
 rotation avatarRotation;
 key gAgent;
 vector gInitialTargetPosition;
+vector entranceThrehshold = <1.5, 0, 0>;
+vector highinsideUFO = <1.25, 1.5, 0>;
+vector inTheSeat = <-0.25, -0.2, -0.4>;
+vector releasePosition = <6, -5, 0>;
 
 integer OPTION_DEBUG = TRUE ;
 sayDebug(string message)
@@ -76,6 +80,21 @@ UpdateSitTarget(vector pos, rotation rot)
     @end;
 }//Written by Strife Onizuka, size adjustment and improvements provided by Talarus Luan
 
+moveAvatar(vector from, vector to, float speed) {
+    float interval = 0.2; // seconds
+    float stepDistance = speed * interval; // 0.5 meters per second at .2 sec per step
+    float distance = llVecDist(from, to);
+    integer steps = (integer)llFloor(distance / stepDistance);
+    integer i;
+    vector deltaPos = (to - from) / steps;
+    vector nowPosition = from;
+    for (i = 0; i < steps; i = i + 1) {
+        UpdateSitTarget(nowPosition, ZERO_ROTATION);
+        nowPosition = nowPosition + deltaPos;
+        llSleep(interval);
+    }
+}
+
 grabSequence1(key target) {
     llMessageLinked(LINK_ALL_OTHERS, 0, "Antigravity", target);
     // get location of the target
@@ -94,21 +113,6 @@ grabSequence1(key target) {
 
 }
 
-moveAvatar(vector from, vector to, float speed) {
-    float interval = 0.2; // seconds
-    float stepDistance = speed * interval; // 0.5 meters per second at .2 sec per step
-    float distance = llVecDist(from, to);
-    integer steps = (integer)llFloor(distance / stepDistance);
-    integer i;
-    vector deltaPos = (to - from) / steps;
-    vector nowPosition = from;
-    for (i = 0; i < steps; i = i + 1) {
-        UpdateSitTarget(nowPosition, ZERO_ROTATION);
-        nowPosition = nowPosition + deltaPos;
-        llSleep(interval);
-    }
-}
-
 grabSequence2(key target) {
     // Sit the agent
     stop_anims(target);
@@ -122,42 +126,33 @@ grabSequence2(key target) {
     // Bring the tgarget to the lower opening of the UFO
     // Relative to the couch that's
     // avatar starts at gInitialTargetPosition
-    vector entranceTrehshold = <1.5, 0, 0>;
-    vector highinsideUFO = <1.25, 1.5, 0>;
-    vector inTheSeat = <-0.25, -0.2, -0.4>;
-    
-    moveAvatar(gInitialTargetPosition, entranceTrehshold, 1.0);
-    moveAvatar(entranceTrehshold, highinsideUFO, 1.0);
+
+    moveAvatar(gInitialTargetPosition, entranceThrehshold, 1.0);
+    moveAvatar(entranceThrehshold, highinsideUFO, 1.0);
     moveAvatar(highinsideUFO, inTheSeat, 0.5);
     UpdateSitTarget(inTheSeat, llEuler2Rot(<-90.0,270.0,0.0> * DEG_TO_RAD));
     llStartAnimation(poseCouch);
     llMessageLinked(LINK_ALL_OTHERS, 0, "Particles Off", target);
     
+    // *** deugfor no
     llSleep(15);
-    
-    // drop target *** debug for now ***
+    releaseSequence(target);
+}
+
+releaseSequence(key target) {
+    llMessageLinked(LINK_ALL_OTHERS, 0, "Antigravity", target);
+    UpdateSitTarget(inTheSeat, ZERO_ROTATION);
     stop_anims(target);
+    llStartAnimation(poseFalling);
+    moveAvatar(inTheSeat, highinsideUFO, 0.5);
+    moveAvatar(highinsideUFO, releasePosition, 1.0);
+    stop_anims(target);
+    llMessageLinked(LINK_ALL_OTHERS, 0, "Particles Off", target);
     string rlvCommand = "release," + (string)target + ",@unsit=y";
     llSay(rlvChannel, rlvCommand);
     rlvCommand = "release," + (string)target + ",@unsit=force";
     llSay(rlvChannel, rlvCommand);
 }
-
-crawling() {
-            float plusdir = 1.0;
-            float minusdir = -1.0;
-            avatarDirection = <0.0, 0.0, minusdir * speed * timerGrain>;
-            avatarStartPosition = <0.0, 0.8, plusdir * Zoffset>;
-            avatarEndPosition = <0.0, 0.8, minusdir * Zoffset>;
-            avatarResetPosition = <0.0, 1.0, minusdir * Zoffset>;
-            avatarRotation = llEuler2Rot(<-90.0, 0.0, plusdir * 90.0> * DEG_TO_RAD);
-            avatarPosition = avatarStartPosition;
-            llSitTarget(avatarStartPosition, avatarRotation);
-            llSetSitText("Crawl");
-            llSetClickAction(CLICK_ACTION_SIT);
-            llSetTimerEvent(20);
-}
-
 
 // ===================================================================================
 default
