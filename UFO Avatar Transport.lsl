@@ -2,8 +2,10 @@
 // Moving avatars around in the UFO and to and from the ground. 
 // Includes sit, poses, RLV, and particle effects. 
 
-string pose = "Misc-Shy-Falling Pneumatic Tube";
-key sound = "dd7a57dc-89dc-3584-3c1a-36727424bedf";
+string poseFalling = "Misc-Shy-Falling Pneumatic Tube";
+string poseCouch = "Stand straight";
+
+integer rlvChannel = -1812221819; // RLVRS
 
 float Zoffset;
 float timerGrain = 0.1;
@@ -16,6 +18,7 @@ vector avatarPosition;
 vector avatarDirection;
 rotation avatarRotation;
 key gAgent;
+vector gInitialTargetPosition;
 
 integer OPTION_DEBUG = TRUE ;
 sayDebug(string message)
@@ -49,13 +52,8 @@ UpdateSitTarget(vector pos, rotation rot)
         if(size)//This tests to make sure the user really exists.
         {
             //We need to make the position and rotation local to the current prim
-            rotation localrot = ZERO_ROTATION;
-            vector localpos = ZERO_VECTOR;
-            if(llGetLinkNumber() > 1)//only need the local rot if it's not the root.
-            {
-                localrot = llGetLocalRot();
-                localpos = llGetLocalPos();
-            }
+            rotation localrot = llGetLocalRot();
+            vector localpos = llGetLocalPos();
             integer linkNum = llGetNumberOfPrims();
             do
             {
@@ -63,7 +61,7 @@ UpdateSitTarget(vector pos, rotation rot)
                 {
                     //<0.008906, -0.049831, 0.088967> are the coefficients for a parabolic curve that best fits real avatars. It is not a perfect fit.
                     float fAdjust = ((((0.008906 * size.z) + -0.049831) * size.z) + 0.088967) * size.z;
-                   llSetLinkPrimitiveParamsFast(linkNum,
+                    llSetLinkPrimitiveParamsFast(linkNum,
                         [PRIM_POS_LOCAL, (pos + <0.0, 0.1, 0.4> - (llRot2Up(rot) * fAdjust)) * localrot + localpos,
                          PRIM_ROT_LOCAL, rot * localrot]);
                     jump end;//cheaper but a tad slower then return
@@ -78,14 +76,75 @@ UpdateSitTarget(vector pos, rotation rot)
     @end;
 }//Written by Strife Onizuka, size adjustment and improvements provided by Talarus Luan
 
-beginAntigravity(key agent) {
-    llMessageLinked(LINK_ALL_OTHERS, 0, "Antigravity", agent);
-    llSleep(3);
-    llMessageLinked(LINK_ALL_OTHERS, 0, "Particles Off", agent);
+grabSequence1(key target) {
+    llMessageLinked(LINK_ALL_OTHERS, 0, "Antigravity", target);
+    // get location of the target
+    vector targetRegionPos = llList2Vector(llGetObjectDetails(target, [OBJECT_POS]), 0);
+    vector seatRegionPos = llList2Vector(llGetPrimitiveParams([PRIM_POSITION]), 0);
+    vector relativePos = targetRegionPos - seatRegionPos;
+    rotation relativeRot = llGetRot();
+    gInitialTargetPosition = relativePos / relativeRot;
+    llSitTarget(gInitialTargetPosition, ZERO_ROTATION); // llEuler2Rot(<-90.0,270.0,0.0> * DEG_TO_RAD)
+    
+    // force-sit the target at the pickup point
+    string rlvCommand = "carry," + (string)target + ",@sit:" + (string)llGetKey() + "=force";
+    llSay(rlvChannel, rlvCommand);
+    rlvCommand = "carry," + (string)target + ",@unsit=n";
+    llSay(rlvChannel, rlvCommand);
+
+}
+
+moveAvatar(vector from, vector to, float speed) {
+    float interval = 0.2; // seconds
+    float stepDistance = speed * interval; // 0.5 meters per second at .2 sec per step
+    float distance = llVecDist(from, to);
+    integer steps = (integer)llFloor(distance / stepDistance);
+    integer i;
+    vector deltaPos = (to - from) / steps;
+    vector nowPosition = from;
+    for (i = 0; i < steps; i = i + 1) {
+        UpdateSitTarget(nowPosition, ZERO_ROTATION);
+        nowPosition = nowPosition + deltaPos;
+        llSleep(interval);
+    }
+}
+
+grabSequence2(key target) {
+    // Sit the agent
+    stop_anims(target);
+    llStartAnimation(poseFalling);
+    
+    // Initial position androtation are
+    // gInitialTargetPosition, <0,0,0,0>
+    // Final position and rotation are
+    // <-0.25, -0.2, -0.4>, llEuler2Rot(<-90.0,270.0,0.0> * DEG_TO_RAD)
+    
+    // Bring the tgarget to the lower opening of the UFO
+    // Relative to the couch that's
+    // avatar starts at gInitialTargetPosition
+    vector entranceTrehshold = <1.5, 0, 0>;
+    vector highinsideUFO = <1.25, 1.5, 0>;
+    vector inTheSeat = <-0.25, -0.2, -0.4>;
+    
+    moveAvatar(gInitialTargetPosition, entranceTrehshold, 1.0);
+    moveAvatar(entranceTrehshold, highinsideUFO, 1.0);
+    moveAvatar(highinsideUFO, inTheSeat, 0.5);
+    UpdateSitTarget(inTheSeat, llEuler2Rot(<-90.0,270.0,0.0> * DEG_TO_RAD));
+    llStartAnimation(poseCouch);
+    llMessageLinked(LINK_ALL_OTHERS, 0, "Particles Off", target);
+    
+    llSleep(15);
+    
+    // drop target *** debug for now ***
+    stop_anims(target);
+    string rlvCommand = "release," + (string)target + ",@unsit=y";
+    llSay(rlvChannel, rlvCommand);
+    rlvCommand = "release," + (string)target + ",@unsit=force";
+    llSay(rlvChannel, rlvCommand);
 }
 
 crawling() {
-                float plusdir = 1.0;
+            float plusdir = 1.0;
             float minusdir = -1.0;
             avatarDirection = <0.0, 0.0, minusdir * speed * timerGrain>;
             avatarStartPosition = <0.0, 0.8, plusdir * Zoffset>;
@@ -105,10 +164,14 @@ default
 {
     state_entry() 
     {
+        // *** debug ***
+        string rlvCommand = "carry," + (string)llGetOwner() + ",@unsit=y";
+        llSay(rlvChannel, rlvCommand);
+        
         llSetText("",<1,1,1>,1);
         llSetSitText( "Sit" );
         // vertical, forward/back, left/right
-        llSitTarget( < -0.25, -0.2, -0.4 > , llEuler2Rot(<-90.0,270.0,0.0> * DEG_TO_RAD));
+        llSitTarget(<-0.25, -0.2, -0.4>, llEuler2Rot(<-90.0,270.0,0.0> * DEG_TO_RAD));
         llSetCameraEyeOffset(<-1.20, 0.1, 0.0>); // where the camera is
         llSetCameraAtOffset(<1.0, 1.0, 0.0>); // where it's looking
         llMessageLinked(LINK_ALL_OTHERS, 0, "Particles Off", NULL_KEY);
@@ -116,38 +179,32 @@ default
     
     touch_start(integer total_number)
     {
+        // *** debug and development ***
+        // *** this will be removed onc this is all working ***
         gAgent = llDetectedKey(0);
         sayDebug("touch_start "+llDetectedName(0));
         llMessageLinked(LINK_ALL_OTHERS, 0, "Scan", gAgent);
         llSensor("", gAgent, AGENT, 20, PI);
     }
     
-    sensor(integer total_number) {
-        gAgent = llDetectedKey(0);
-        sayDebug("sensor "+llDetectedName(0));
-        llSleep(3);
-        beginAntigravity(gAgent);
-    }
-    
-    run_time_permissions(integer permissions)
-    {
-        if (permissions & PERMISSION_TRIGGER_ANIMATION)
-        {
-            gAgent = llGetPermissionsKey();
-            if (llGetAgentSize(gAgent) != ZERO_VECTOR)
-            { // agent is still in the sim.
-                // Sit the agent
-                stop_anims(gAgent);
-                //send messaeg for particle_scan_on(agent);
-                llStartAnimation(pose);
-            }
-        }
-        else
-        {
+    link_message(integer sender_num, integer num, string message, key target) {
+        // *** eventually this must receive a GRAB command with the target's key. ***
+        // *** That will start the same process as in touch_Starte ***
+        if (message == "RESET") {
+            // send message for particle_scan_off();
+            stop_anims(llAvatarOnSitTarget());
+            llUnSit(llAvatarOnSitTarget());
             llResetScript();
         }
     }
 
+    sensor(integer total_number) {
+        gAgent = llDetectedKey(0);
+        sayDebug("sensor "+llDetectedName(0));
+        llSleep(3);
+        grabSequence1(gAgent);
+    }
+    
     changed(integer change){
         if (change & CHANGED_LINK) {
             key agent = llAvatarOnSitTarget();
@@ -169,12 +226,20 @@ default
         }
     }    
 
-    link_message(integer sender_num, integer num, string message, key target) {
-        if (message == "RESET") {
-            // send message for particle_scan_off();
-            stop_anims(llAvatarOnSitTarget());
-            llUnSit(llAvatarOnSitTarget());
+    run_time_permissions(integer permissions)
+    {
+        if (permissions & PERMISSION_TRIGGER_ANIMATION)
+        {
+            gAgent = llGetPermissionsKey();
+            if (llGetAgentSize(gAgent) != ZERO_VECTOR)
+            { // agent is still in the sim.
+                grabSequence2(gAgent);
+            }
+        }
+        else
+        {
             llResetScript();
         }
     }
+
 }
