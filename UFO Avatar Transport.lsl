@@ -15,10 +15,9 @@ vector avatarResetPosition;
 vector avatarPosition;
 vector avatarDirection;
 rotation avatarRotation;
-integer crawling = 0;
 key gAgent;
 
-integer OPTION_DEBUG = FALSE;
+integer OPTION_DEBUG = TRUE ;
 sayDebug(string message)
 {
     if (OPTION_DEBUG)
@@ -27,37 +26,6 @@ sayDebug(string message)
     }
 }
 
-particle_scan_on(key target) {
-    llLoopSound(sound, 1.0);
-llParticleSystem([
-PSYS_PART_FLAGS, PSYS_PART_TARGET_POS_MASK | PSYS_PART_FOLLOW_SRC_MASK | PSYS_PART_EMISSIVE_MASK | PSYS_PART_INTERP_SCALE_MASK | PSYS_PART_INTERP_COLOR_MASK,
-PSYS_SRC_PATTERN, 4, 
-PSYS_PART_START_ALPHA, 0.5,
-PSYS_PART_END_ALPHA, 0.5,
-PSYS_PART_START_COLOR, <0.0, 1.0, 0.0>,
-PSYS_PART_END_COLOR, <0.5, 1.0, 0.0>,
-PSYS_PART_START_SCALE, <0.5, 0.5, 0.0>,
-PSYS_PART_END_SCALE, <0.5, 0.5, 0.0>,
-PSYS_PART_MAX_AGE, 2.0,
-PSYS_SRC_MAX_AGE, 0.0,
-PSYS_SRC_ACCEL, <0.0, 0.0, -12.0>,
-PSYS_SRC_ANGLE_BEGIN, 4.0,
-PSYS_SRC_ANGLE_END, 5,
-PSYS_SRC_BURST_PART_COUNT, 10,
-PSYS_SRC_BURST_RATE, 0.1,
-PSYS_SRC_BURST_RADIUS, 0.0,
-PSYS_SRC_BURST_SPEED_MIN, 2.0,
-PSYS_SRC_BURST_SPEED_MAX, 3.0,
-PSYS_SRC_OMEGA, <0.0, 0.0, 30.0>,
-PSYS_SRC_TARGET_KEY,llGetKey(), 
-PSYS_SRC_TEXTURE, ""]);
-
-}
-
-particle_scan_off() {
-    llParticleSystem([]);
-    llStopSound();
-}
 // Stop all animations
 stop_anims(key agent)
 {
@@ -110,44 +78,14 @@ UpdateSitTarget(vector pos, rotation rot)
     @end;
 }//Written by Strife Onizuka, size adjustment and improvements provided by Talarus Luan
 
+beginAntigravity(key agent) {
+    llMessageLinked(LINK_ALL_OTHERS, 0, "Antigravity", agent);
+    llSleep(3);
+    llMessageLinked(LINK_ALL_OTHERS, 0, "Particles Off", agent);
+}
 
-
-// ===================================================================================
-default
-{
-    state_entry() 
-    {
-        llSetText("",<0,0,0>,0);
-        llSetSitText("Transport");
-        llSitTarget(<0.0, 0.0, -2.0> , ZERO_ROTATION);
-        particle_scan_off();
-    }
-    
-    touch_start(integer total_number)
-    {
-        sayDebug("touch_start face:"+(string)llDetectedTouchFace(0));
-        llResetTime();
-        llSetTimerEvent(controlDelay);
-    }
-    
-
-    touch_end(integer num_detected)
-    {
-        sayDebug("touch_end num_detected "+(string)num_detected);
-        integer touchFace = llDetectedTouchFace(0);
-
-        if (llGetTime() >= controlDelay)
-        {
-            sayDebug("touch_end admin");
-        }
-        else
-        {
-            sayDebug("touch_end crawl");
-            llSetLinkPrimitiveParamsFast(LINK_THIS, [PRIM_COLOR, llDetectedTouchFace(0), <1,1,1>, 1.0]);
-
-        if (crawling == 0)
-        {
-            float plusdir = 1.0;
+crawling() {
+                float plusdir = 1.0;
             float minusdir = -1.0;
             avatarDirection = <0.0, 0.0, minusdir * speed * timerGrain>;
             avatarStartPosition = <0.0, 0.8, plusdir * Zoffset>;
@@ -159,20 +97,48 @@ default
             llSetSitText("Crawl");
             llSetClickAction(CLICK_ACTION_SIT);
             llSetTimerEvent(20);
-        }
-        }
-    }
+}
 
+
+// ===================================================================================
+default
+{
+    state_entry() 
+    {
+        llSetText("",<1,1,1>,1);
+        llSetSitText( "Sit" );
+        // vertical, forward/back, left/right
+        llSitTarget( < -0.25, -0.2, -0.4 > , llEuler2Rot(<-90.0,270.0,0.0> * DEG_TO_RAD));
+        llSetCameraEyeOffset(<-1.20, 0.1, 0.0>); // where the camera is
+        llSetCameraAtOffset(<1.0, 1.0, 0.0>); // where it's looking
+        llMessageLinked(LINK_ALL_OTHERS, 0, "Particles Off", NULL_KEY);
+    }
+    
+    touch_start(integer total_number)
+    {
+        gAgent = llDetectedKey(0);
+        sayDebug("touch_start "+llDetectedName(0));
+        llMessageLinked(LINK_ALL_OTHERS, 0, "Scan", gAgent);
+        llSensor("", gAgent, AGENT, 20, PI);
+    }
+    
+    sensor(integer total_number) {
+        gAgent = llDetectedKey(0);
+        sayDebug("sensor "+llDetectedName(0));
+        llSleep(3);
+        beginAntigravity(gAgent);
+    }
+    
     run_time_permissions(integer permissions)
     {
         if (permissions & PERMISSION_TRIGGER_ANIMATION)
         {
-            key agent = llGetPermissionsKey();
-            if (llGetAgentSize(agent) != ZERO_VECTOR)
+            gAgent = llGetPermissionsKey();
+            if (llGetAgentSize(gAgent) != ZERO_VECTOR)
             { // agent is still in the sim.
                 // Sit the agent
-                stop_anims(agent);
-                particle_scan_on(agent);
+                stop_anims(gAgent);
+                //send messaeg for particle_scan_on(agent);
                 llStartAnimation(pose);
             }
         }
@@ -195,7 +161,7 @@ default
                     if (llGetPermissions() & PERMISSION_TRIGGER_ANIMATION) {
                         // Only stop anis if permission was granted previously.
                         stop_anims(agent);
-                        particle_scan_off();
+                        // send message for particle_scan_off();
                     }
                     llResetScript();
                 }
@@ -205,7 +171,7 @@ default
 
     link_message(integer sender_num, integer num, string message, key target) {
         if (message == "RESET") {
-            particle_scan_off();
+            // send message for particle_scan_off();
             stop_anims(llAvatarOnSitTarget());
             llUnSit(llAvatarOnSitTarget());
             llResetScript();
