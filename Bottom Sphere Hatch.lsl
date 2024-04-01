@@ -2,12 +2,11 @@ integer OPTION_DEBUG = FALSE;
 integer gDoorState;
 integer CLOSED = 0;
 integer OPEN = 1;
-vector dimpleOpen = <0.14, 0.50, 0.00>;
+vector dimpleOpen = <0.22250, 0.50, 0.00>;
 vector dimpleClosed = <0.00, 0.50, 0.00>;
 vector dimpleDelta;
 integer steps = 20;
 string order;
-string previousOrder;
 
 sayDebug(string message)
 {
@@ -15,14 +14,6 @@ sayDebug(string message)
     {
         llOwnerSay("UFO Bottom: "+message);
     }
-}
-
-sendJSON(string jsonKey, string value, key avatarKey){
-    llMessageLinked(LINK_ROOT, 0, llList2Json(JSON_OBJECT, [jsonKey, value]), avatarKey);
-}
-
-sendJSONinteger(string jsonKey, integer value, key avatarKey){
-    llMessageLinked(LINK_ROOT, 0, llList2Json(JSON_OBJECT, [jsonKey, (string)value]), avatarKey);
 }
 
 string getJSONstring(string jsonValue, string jsonKey, string valueNow){
@@ -39,7 +30,6 @@ initialize() {
     dimpleDelta = (dimpleOpen - dimpleClosed) / steps;
     close_door();
     open_door();
-    previousOrder = "";
     }
 
 close_door() {
@@ -53,7 +43,7 @@ close_door() {
         }
     gDoorState = CLOSED;
     }
-    sendJSONinteger("BottomIs", gDoorState, NULL_KEY);
+    llMessageLinked(LINK_ROOT, gDoorState, "BottomIs", NULL_KEY);
 }
 
 open_door() {
@@ -67,7 +57,7 @@ open_door() {
         }
     gDoorState = OPEN;
     }
-    sendJSONinteger("BottomIs", gDoorState, NULL_KEY);
+    llMessageLinked(LINK_ROOT, gDoorState, "BottomIs", NULL_KEY);
 }
 
 default
@@ -80,16 +70,12 @@ default
     link_message(integer Sender, integer Number, string msg, key Key)
     {
         sayDebug(msg);
-        order = getJSONstring(msg, "Bottom", previousOrder);
-        if (order != previousOrder) {
-            if (order == "Open") {
-                open_door();
-            } else if (order == "Close") {
+        if (msg == "Bottom") {
+            if (Number == CLOSED) {
                 close_door();
-            } else if (order = "Initialize") {
-                initialize();
+            } else if (Number = OPEN) {
+                open_door();
             }
-            previousOrder = order;
         }
     }
 }
