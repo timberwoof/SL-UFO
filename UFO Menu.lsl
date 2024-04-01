@@ -12,6 +12,7 @@ integer OPTION_DEBUG = TRUE;
 
 string AUTO = "Auto";
 string BLANK = " ";
+string CLOSE = "Close";
 string DEBUG = "Debug";
 string DOWN = "Down";
 string GRAB = "Grab";
@@ -53,6 +54,9 @@ float humVolume=1.0;
 string instructionNote = "Orbital Prisoner Transport Shuttle";
 key id;
 
+integer link_cupola;
+integer link_hatch;
+integer link_pilot_seat;
 list couch_links;
 list scan_target_keys;
 list scan_target_names;
@@ -86,7 +90,6 @@ integer assignCouch(key target) {
     integer i;
     for (i = 0; i < 4; i = i + 1) {
         key theKey = llList2Key(couch_passenger_keys, i);
-        sayDebug("assignCouch "+(string)i+" "+(string)theKey);
         if (theKey == NULL_KEY) {
             couch_passenger_keys = llListReplaceList(couch_passenger_keys, [target], i, i);
             couch_passenger_names = llListReplaceList(couch_passenger_names, [llKey2Name(target)], i, i);
@@ -105,7 +108,6 @@ integer freeCouch(key target) {
     integer i;
     for (i = 0; i < 4; i = i + 1) {
         key theKey = llList2Key(couch_passenger_keys, i);
-        sayDebug("freeCouch "+(string)i+" "+(string)theKey);
         if (llList2Key(couch_passenger_keys, i) == target) {
             couch_passenger_keys = llListReplaceList(couch_passenger_keys, [NULL_KEY], i, i);
             couch_passenger_names = llListReplaceList(couch_passenger_names, [""], i, i);            
@@ -138,12 +140,10 @@ setUpMenu(string identifier, key avatarKey, string message, list buttons)
 // message - text for top of blue menu dialog
 // buttons - list of button texts
 {
-    sayDebug("setUpMenu "+identifier+" "+llKey2Name(avatarKey)+" "+message);
-
     if (identifier != MAIN) {
         buttons += [MAIN];
     }
-    buttons += ["Close"];
+    buttons += [CLOSE];
 
     menuIdentifier = identifier;
     menuAgentKey = avatarKey; // remember who clicked
@@ -223,13 +223,13 @@ doMainMenu(integer CHANNEL, string name, key id, string msg) {
     } else if (msg == REPORT) {
         report();
     } else if (msg == "Open Cupola") {
-        llMessageLinked(LINK_SET, OPEN, "Cupola", NULL_KEY);
+        llMessageLinked(link_cupola, OPEN, "Cupola", NULL_KEY);
     } else if (msg == "Close Cupola") {
-        llMessageLinked(LINK_SET, CLOSED, "Cupola", NULL_KEY);
+        llMessageLinked(link_cupola, CLOSED, "Cupola", NULL_KEY);
     } else if (msg == "Open Bottom") {
-        llMessageLinked(LINK_SET, OPEN, "Bottom", NULL_KEY);
+        llMessageLinked(link_hatch, OPEN, "Bottom", NULL_KEY);
     } else if (msg == "Close Bottom") {
-        llMessageLinked(LINK_SET, CLOSED, "Bottom", NULL_KEY);
+        llMessageLinked(link_hatch, CLOSED, "Bottom", NULL_KEY);
     } else if (msg == SCAN) {
         scan_target_names = [];
         scan_target_keys = [];
@@ -240,10 +240,10 @@ doMainMenu(integer CHANNEL, string name, key id, string msg) {
         releaseMenu(id);
     } else if (msg == MANUAL) {
         gFlightMode = FLIGHT_MANUAL;
-        llMessageLinked(LINK_SET, FLIGHT_MANUAL, SETFLIGHTMODE, NULL_KEY);
+        llMessageLinked(LINK_ROOT, FLIGHT_MANUAL, SETFLIGHTMODE, NULL_KEY);
     } else if (msg == AUTO) {
         gFlightMode = FLIGHT_AUTO;
-        llMessageLinked(LINK_SET, FLIGHT_AUTO, SETFLIGHTMODE, NULL_KEY);
+        llMessageLinked(LINK_ROOT, FLIGHT_AUTO, SETFLIGHTMODE, NULL_KEY);
     } else {
         sayDebug("Unhandled main menu item:"+msg);
     } 
@@ -258,7 +258,7 @@ viewMenu(key pilot) {
 doViewMenu(integer CHANNEL, string name, key id, string msg) {
     sayDebug("doViewMenu "+msg);
     tearDownMenu();
-    llMessageLinked(LINK_SET, (integer)msg, VIEW+msg, id);
+    llMessageLinked(link_pilot_seat, (integer)msg, VIEW+msg, id);
 }
 
 manualFlightMenu(key pilot) {
@@ -273,7 +273,7 @@ doManualFlightMenu(integer CHANNEL, string name, key id, string msg) {
     if (msg == "Stop"){
         integer_increment = -1;
         gFlightMode = FLIGHT_OFF;
-        llMessageLinked(LINK_SET, FLIGHT_OFF, SETFLIGHTMODE, id);
+        llMessageLinked(LINK_ROOT, FLIGHT_OFF, SETFLIGHTMODE, id);
         return;
     } else if (msg == "Report") {
         report();
@@ -294,7 +294,7 @@ doManualFlightMenu(integer CHANNEL, string name, key id, string msg) {
         integer_increment = 100;
     }
     sayDebug("doManualFlightMenu sending "+MANUAL+" "+(string)integer_increment);    
-    llMessageLinked(LINK_SET, integer_increment, MANUAL, id);
+    llMessageLinked(LINK_ROOT, integer_increment, MANUAL, id);
 }
 
 autoMenu(key pilot) {
@@ -350,11 +350,16 @@ default
             //sayDebug("state_entry i:"+(string)i+" '"+couchName+"' "+(string)link);
             couch_links = couch_links + [link];
         }
+        link_cupola = getLinkWithName("Cupola");
+        link_hatch =getLinkWithName("Hatch");
+        link_pilot_seat = getLinkWithName("Pilot Seat"); 
         
         // mass compensator
         float mass = llGetMass(); // mass of this object
         float gravity = 9.8; // gravity constant
         llSetForce(mass * <0,0,gravity>, FALSE); // in global orientation
+        llMessageLinked(LINK_ROOT, 0, "Particles Off", NULL_KEY);
+
     }
 
     touch_start(integer total_number)
@@ -384,45 +389,54 @@ default
         } else if (menuIdentifier == MANUAL) {
             doManualFlightMenu(CHANNEL, name, id, msg);
         } else if (menuIdentifier == GRAB) {
-            key grabKey = llList2Key(scan_target_keys, (integer)msg);
-            integer link = assignCouch(grabKey);
-            sayDebug("listen GRAB "+(string)link+" "+llKey2Name(grabKey));
-            llMessageLinked(LINK_SET, link, "GRAB", grabKey);
+            if ((msg != CLOSE) && (msg != MAIN)) {
+                integer i = (integer)msg;
+                key grabKey = llList2Key(scan_target_keys, i);
+                scan_target_keys = llListReplaceList(scan_target_keys, [""], i, i);            
+                scan_target_names = llListReplaceList(scan_target_names, [""], i, i);            
+                integer link = assignCouch(grabKey);
+                sayDebug("listen GRAB llMessageLinked("+(string)link+"0, GRAB, "+llKey2Name(grabKey)+")");
+                llMessageLinked(link, link, "GRAB", grabKey);
+            }
         } else if (menuIdentifier == RELEASE) {
-            key releaseKey = llList2Key(couch_passenger_keys, (integer)msg);
-            llMessageLinked(LINK_SET, freeCouch(releaseKey),"RELEASE", releaseKey);
+            if ((msg != CLOSE) && (msg != MAIN)) {
+                key releaseKey = llList2Key(couch_passenger_keys, (integer)msg);
+                integer link = freeCouch(releaseKey);
+                sayDebug("listen RELEASE llMessageLinked("+(string)link+"0, RELEASE, "+llKey2Name(releaseKey)+")");
+                llMessageLinked(link, link, "RELEASE", releaseKey);
+            }
         } 
     }
 
     link_message(integer sender_num, integer num, string msg, key id) 
     {
-        sayDebug("link_message("+(string)msg+")");
+        //sayDebug("link_message("+(string)msg+")");
         if (msg == "CupolaIs") {
             gHatchTopState = num;
-        }
-        if (msg == "BottomIs") {
+        } else if (msg == "BottomIs") {
             gHatchBottomState = num;
-        }
-        if (msg == "PilotIs") {
+        } else if (msg == "PilotIs") {
             gPilot = id;
+            sayDebug("link_message gPilot:"+(string)gPilot);
             if (gPilot == NULL_KEY) {
                 gFlightMode = FLIGHT_OFF;
-                llMessageLinked(LINK_SET, FLIGHT_OFF, SETFLIGHTMODE, NULL_KEY);
+                llMessageLinked(LINK_ROOT, FLIGHT_OFF, SETFLIGHTMODE, NULL_KEY);
             }
+        } else if (msg == "LOST") {
+            integer i = llListFindList(couch_links, [num]);
+            couch_passenger_keys = llListReplaceList(couch_passenger_keys, [NULL_KEY], i, i);
+            couch_passenger_names = llListReplaceList(couch_passenger_names, [""], i, i);            
         }
-        sayDebug("link_message gPilot:"+(string)gPilot);
     }
 
     sensor(integer avatars_found) {
         sayDebug("sensor("+(string)avatars_found+")");
-        sayDebug("sensor gPilot:"+(string)gPilot);
         scan_target_keys = [];
         scan_target_names = [];
         integer i;
-        sayDebug("sensor couch_passenger_keys:"+(string)couch_passenger_keys);
         for (i = 0; i < avatars_found; i = i + 1) {
             key target = llDetectedKey(i);
-            llMessageLinked(LINK_SET, 0, "Scan", target);
+            llMessageLinked(LINK_ROOT, 0, "Scan", target);
             sayDebug("sensor target "+(string)i+" is "+llKey2Name(target));
             if ((target != (key)gPilot) && (llListFindList(couch_passenger_keys, [target]) == -1)) {
                 string name = llGetDisplayName(target);
