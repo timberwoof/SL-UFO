@@ -1,8 +1,13 @@
 // UFO Manual Flight
 
 integer OPTION_DEBUG = TRUE;
-string SETFLIGHT = "SetFlight";
+string SETFLIGHTMODE = "SetFlightMode";
 string FLIGHTIS = "FlightIs";
+string MANUAL = "Manual";
+integer flightMode;
+integer FLIGHT_MANUAL = 1;
+integer FLIGHT_OFF = 0;
+integer FLIGHT_AUTO = -1;
 
 key Pilot;
 string Flight;
@@ -15,7 +20,6 @@ string gHumSound = "46157083-3135-fb2a-2beb-0f2c67893907";
 // **********************
 // physical manual flight
 float LINEAR_TAU = 0.75;     
-integer integer_increment = -1;        
 float TARGET_INCREMENT = 0.5;
 float ANGULAR_TAU = 1.5;
 float ANGULAR_DAMPING = 0.85;
@@ -35,32 +39,6 @@ sayDebug(string message)
     {
         llOwnerSay("UFO Manual Flight: "+message);
     }
-}
-
-sendJSON(string jsonKey, string value, key avatarKey){
-    llMessageLinked(LINK_THIS, 0, llList2Json(JSON_OBJECT, [jsonKey, value]), avatarKey);
-}
-
-sendJSONinteger(string jsonKey, integer value, key avatarKey){
-    llMessageLinked(LINK_THIS, 0, llList2Json(JSON_OBJECT, [jsonKey, (string)value]), avatarKey);
-}
-
-string getJSONstring(string jsonValue, string jsonKey, string valueNow){
-    string result = valueNow;
-    string value = llJsonGetValue(jsonValue, [jsonKey]);
-    if (value != JSON_INVALID) {
-        result = value;
-    }
-    return result;
-}
-
-integer getJSONinteger(string jsonValue, string jsonKey, integer valueNow){
-    integer result = valueNow;
-    string value = llJsonGetValue(jsonValue, [jsonKey]);
-    if (value != JSON_INVALID) {
-        result = (integer)value;
-    }
-    return result;
 }
 
 travelTo(list destinationsList){
@@ -113,13 +91,16 @@ default
     link_message(integer sender_num, integer num, string msg, key id) 
     {
         sayDebug("default link_message("+(string)msg+")");
-        Pilot = (key)getJSONstring(msg, "Pilot", (string)Pilot);
-        Flight = getJSONstring(msg, SETFLIGHT, Flight);
-        sayDebug("default link_message Pilot:"+llKey2Name(Pilot));
-        sayDebug("default link_message Flight:"+Flight);
-        if (Flight == "Manual") {
-            sayDebug("default setting state StateFlying");
-            state StateFlying;
+        if (msg == "PilotIs") {
+            Pilot = id;
+            sayDebug("default link_message Pilot:"+llKey2Name(Pilot));
+        } else if (msg == SETFLIGHTMODE) {
+            flightMode = num;
+            sayDebug("default link_message flightMode:"+(string)flightMode);
+            if (flightMode == FLIGHT_MANUAL) {
+                sayDebug("default link_message setting state StateFlying");
+                state StateFlying;
+            }
         }
     }
 }
@@ -156,6 +137,21 @@ state StateFlying
         llWhisper(0,"StateFlying state_entry complete");
     } // end state_entry
             
+    link_message(integer sender_num, integer num, string msg, key id) 
+    {
+        sayDebug("StateFlying link_message("+(string)msg+")");
+        if (msg == MANUAL) {
+            if (num >= 0) {
+                TARGET_INCREMENT = num / 100.0;
+                sayDebug("StateFlying link_message num:"+(string)num+" TARGET_INCREMENT:"+(string)TARGET_INCREMENT);
+                llWhisper(0,"Power: " + llGetSubString((string)(TARGET_INCREMENT * 100.0),0,3) + "%");
+            } else {
+                sayDebug("StateFlying link_message setting state default");
+                state default;
+            }
+        }
+    }
+
     run_time_permissions(integer perm)
     {
         if (perm == PERMISSION_TAKE_CONTROLS)
@@ -266,23 +262,6 @@ state StateFlying
         }
     }
     
-    link_message(integer sender_num, integer num, string msg, key id) 
-    {
-        sayDebug("StateFlying link_message("+(string)msg+")");
-        integer old_increment = integer_increment;
-        integer_increment = getJSONinteger(msg, "Increment", old_increment);
-        if (integer_increment != old_increment) {
-            if (integer_increment >= 0) {
-                TARGET_INCREMENT = integer_increment / 100.0;
-                sayDebug("StateFlying link_message integer_increment:"+(string)integer_increment+" TARGET_INCREMENT:"+(string)TARGET_INCREMENT);
-                llWhisper(0,"Power: " + llGetSubString((string)(TARGET_INCREMENT * 100.0),0,3) + "%");
-            } else {
-                sayDebug("StateFlying link_message setting state default");
-                state default;
-            }
-        }
-    }
-
     timer()
     {
         pos *= brake;
