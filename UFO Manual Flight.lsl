@@ -62,7 +62,7 @@ stop() {
     llStopSound();
     llSetStatus(STATUS_PHYSICS, FALSE);
     llSetStatus(STATUS_PHANTOM, FALSE);
-    llMessageLinked(LINK_ALL_CHILDREN, 0, "stop", NULL_KEY);
+    //llMessageLinked(LINK_ALL_CHILDREN, 0, "stop", NULL_KEY);
     llSetTimerEvent(0.0);
     llReleaseControls();
     llWhisper(0,"Stopped.");
@@ -75,7 +75,7 @@ default
         sayDebug("default state_entry");
         Flight = "";
         llSetTimerEvent(0.0);
-        // llMessageLinked(LINK_ALL_CHILDREN, 0, "stop", NULL_KEY); / shut off engines
+        //llMessageLinked(LINK_ALL_CHILDREN, 0, "stop", NULL_KEY); / shut off engines
         llSetLinkPrimitiveParamsFast(LINK_ROOT,
                 [PRIM_LINK_TARGET, LINK_ALL_CHILDREN,
                 PRIM_PHYSICS_SHAPE_TYPE, PRIM_PHYSICS_SHAPE_PRIM]);
@@ -90,10 +90,10 @@ default
 
     link_message(integer sender_num, integer num, string msg, key id) 
     {
-        sayDebug("default link_message("+(string)msg+")");
+        //sayDebug("default link_message num:"+(string)num+" msg:"+msg);
         if (msg == "PilotIs") {
             Pilot = id;
-            sayDebug("default link_message Pilot:"+llKey2Name(Pilot));
+            sayDebug("default link_message PilotIs:"+llKey2Name(Pilot));
         } else if (msg == SETFLIGHTMODE) {
             flightMode = num;
             sayDebug("default link_message flightMode:"+(string)flightMode);
@@ -139,12 +139,11 @@ state StateFlying
             
     link_message(integer sender_num, integer num, string msg, key id) 
     {
-        sayDebug("StateFlying link_message("+(string)msg+")");
         if (msg == MANUAL) {
             if (num >= 0) {
                 TARGET_INCREMENT = num / 100.0;
                 sayDebug("StateFlying link_message num:"+(string)num+" TARGET_INCREMENT:"+(string)TARGET_INCREMENT);
-                llWhisper(0,"Power: " + llGetSubString((string)(TARGET_INCREMENT * 100.0),0,3) + "%");
+                llWhisper(0,"Power: " + llGetSubString((string)(TARGET_INCREMENT * 1000.0),0,3) + "%");
             } else {
                 sayDebug("StateFlying link_message setting state default");
                 state default;
@@ -156,14 +155,13 @@ state StateFlying
     {
         if (perm == PERMISSION_TAKE_CONTROLS)
         {
-            llMessageLinked(LINK_ALL_CHILDREN, 0, "slow", NULL_KEY);
+            //llMessageLinked(LINK_ALL_CHILDREN, 0, "slow", NULL_KEY);
             integer LEVELS = CONTROL_FWD | CONTROL_BACK | CONTROL_ROT_LEFT | CONTROL_ROT_RIGHT | CONTROL_UP | CONTROL_DOWN | CONTROL_LEFT | CONTROL_RIGHT | CONTROL_ML_LBUTTON;
             llTakeControls(LEVELS, TRUE, FALSE);
         }
         else
         {
             llWhisper(0,"Stopped");
-            //llMessageLinked(LINK_ALL_CHILDREN, 0, "STOP", NULL_KEY); // shut off engines
             llSetTimerEvent(0.0);
             llSleep(1.5);
             //llResetScript(); // there's got to be a better way to do this
@@ -255,7 +253,7 @@ state StateFlying
             llRotLookAt(rot, ANGULAR_TAU, ANGULAR_DAMPING);
             
             if (llGetTime() > (gLastMessage + 0.5)) {
-                llMessageLinked(LINK_ALL_CHILDREN, (integer)TARGET_INCREMENT, nudge, NULL_KEY);
+                //llMessageLinked(LINK_ALL_CHILDREN, (integer)TARGET_INCREMENT, nudge, NULL_KEY);
                 llPlaySound(gSoundgWhiteNoise,TARGET_INCREMENT/10.0);
                 gLastMessage = llGetTime();
             }
