@@ -123,7 +123,6 @@ default
 
     link_message(integer sender_num, integer num, string msg, key id) 
     {
-        sayDebug("link_message("+(string)msg+")");
         if (msg == "Scan") {
             scan(id);
             llSleep(3);
