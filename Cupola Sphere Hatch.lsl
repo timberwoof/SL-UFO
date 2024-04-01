@@ -7,7 +7,6 @@ vector dimpleClosed = <0.50, 1.0, 0.00>;
 vector dimpleDelta;
 integer steps = 20;
 string order;
-string previousOrder;
 
 sayDebug(string message)
 {
@@ -15,14 +14,6 @@ sayDebug(string message)
     {
         llOwnerSay("UFO Cupola: "+message);
     }
-}
-
-sendJSON(string jsonKey, string value, key avatarKey){
-    llMessageLinked(LINK_ROOT, 0, llList2Json(JSON_OBJECT, [jsonKey, value]), avatarKey);
-}
-
-sendJSONinteger(string jsonKey, integer value, key avatarKey){
-    llMessageLinked(LINK_ROOT, 0, llList2Json(JSON_OBJECT, [jsonKey, (string)value]), avatarKey);
 }
 
 string getJSONstring(string jsonValue, string jsonKey, string valueNow){
@@ -39,7 +30,6 @@ initialize() {
     dimpleDelta = (dimpleOpen - dimpleClosed) / steps;
     close_door();
     open_door();
-    previousOrder = "";
     }
 
 close_door() {
@@ -50,10 +40,10 @@ close_door() {
         for (i = 0; i < steps; i++) {
             theDimple = theDimple - dimpleDelta;
             llSetPrimitiveParams([PRIM_TYPE, PRIM_TYPE_SPHERE, PRIM_HOLE_CIRCLE, <0, 1, 0>, .95, <0,0,0>, theDimple]);
+            }
+        gDoorState = CLOSED;
         }
-    gDoorState = CLOSED;
-    }
-    sendJSONinteger("CupolaIs", gDoorState, NULL_KEY);
+    llMessageLinked(LINK_ROOT, gDoorState, "CupolaIs", NULL_KEY);
 }
 
 open_door() {
@@ -65,9 +55,9 @@ open_door() {
             theDimple = theDimple + dimpleDelta;
             llSetPrimitiveParams([PRIM_TYPE, PRIM_TYPE_SPHERE, PRIM_HOLE_CIRCLE, <0, 1, 0>, .95, <0,0,0>, theDimple]);
         }
-    gDoorState = OPEN;
+        gDoorState = OPEN;
     }
-    sendJSONinteger("CupolaIs", gDoorState, NULL_KEY);
+    llMessageLinked(LINK_ROOT, gDoorState, "CupolaIs", NULL_KEY);
 }
 
 default
@@ -80,16 +70,12 @@ default
     link_message(integer Sender, integer Number, string msg, key Key)
     {
         sayDebug(msg);
-        order = getJSONstring(msg, "Cupola", previousOrder);
-        if (order != previousOrder) {
-            if (order == "Open") {
-                open_door();
-            } else if (order == "Close") {
+        if (msg == "Cupola") {
+            if (Number == CLOSED) {
                 close_door();
-            } else if (order = "Initialize") {
-                initialize();
+            } else if (Number = OPEN) {
+                open_door();
             }
-            previousOrder = order;
         }
     }
 }
