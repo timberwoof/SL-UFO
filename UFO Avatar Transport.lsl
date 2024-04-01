@@ -7,6 +7,7 @@ string poseCouch = "Stand straight";
 
 integer myLinkNum;
 key myVictim;
+integer active;
 
 integer rlvChannel = -1812221819; // RLVRS
 float Zoffset;
@@ -40,36 +41,25 @@ stop_anims(key agent)
 }
 
 //Sets / Updates the sit target moving the avatar on it if necessary.
-UpdateSitTarget(key target, vector pos, rotation rot)
-{//Using this while the object is moving may give unpredictable results.
-    llSitTarget(pos, rot);//Set the sit target
-    key user = llAvatarOnSitTarget();
-    if(user)//true if there is a user seated on the sittarget, if so update their position
-    {
-        vector size = llGetAgentSize(user);
-        if(size)//This tests to make sure the user really exists.
-        {
+UpdateSitTarget(key target, vector pos, rotation rot) {
+    //Using this while the object is moving may give unpredictable results.
+    llSitTarget(pos, rot);//Set the sit target -- why? 
+    integer linkNum;
+    for (linkNum = llGetObjectPrimCount(llGetKey()); linkNum <= llGetNumberOfPrims(); linkNum = linkNum + 1) {
+        if(target == llGetLinkKey(linkNum)) {
             //We need to make the position and rotation local to the current prim
             rotation localrot = llGetLocalRot();
             vector localpos = llGetLocalPos();
-            integer linkNum = llGetNumberOfPrims();
-            if(user == llGetLinkKey(myLinkNum))//just checking to make sure the index is valid.
-            {
-                //<0.008906, -0.049831, 0.088967> are the coefficients for a parabolic curve that best fits real avatars. It is not a perfect fit.
-                float fAdjust = ((((0.008906 * size.z) + -0.049831) * size.z) + 0.088967) * size.z;
-                llSetLinkPrimitiveParamsFast(linkNum,
-                    [PRIM_POS_LOCAL, (pos + <0.0, 0.1, 0.4> - (llRot2Up(rot) * fAdjust)) * localrot + localpos,
-                     PRIM_ROT_LOCAL, rot * localrot]);
-                jump end;//cheaper but a tad slower then return
+            vector size = llGetAgentSize(target);
+            //<0.008906, -0.049831, 0.088967> are the coefficients for a parabolic curve that best fits real avatars. It is not a perfect fit.
+            float fAdjust = ((((0.008906 * size.z) + -0.049831) * size.z) + 0.088967) * size.z;
+            llSetLinkPrimitiveParamsFast(linkNum,
+                [PRIM_POS_LOCAL, (pos + <0.0, 0.1, 0.4> - (llRot2Up(rot) * fAdjust)) * localrot + localpos,
+                 PRIM_ROT_LOCAL, rot * localrot]);
             }
         }
-        else
-        {//It is rare that the sit target will bork but it does happen, this can help to fix it.
-            llUnSit(user);
-        }
     }
-    @end;
-}
+
 //Written by Strife Onizuka, size adjustment and improvements provided by Talarus Luan
 //Adjusted for being a specific prim by Tuimberwoof Lupindo
 
@@ -89,6 +79,7 @@ moveAvatar(key target, vector from, vector to, float speed) {
 }
 
 grabSequence1(key target) {
+    sayDebug("grabSequence1("+llKey2Name(target)+")");
     llMessageLinked(LINK_ROOT, 0, "Antigravity", target);
     llSleep(3);
     // get location of the target
@@ -104,9 +95,12 @@ grabSequence1(key target) {
     llSay(rlvChannel, rlvCommand);
     rlvCommand = "carry," + (string)target + ",@unsit=n";
     llSay(rlvChannel, rlvCommand);
+    
+    //Thread gets picked up at change where the avatar sits at the pickup point
 }
 
 grabSequence2(key target) {
+    sayDebug("grabSequence2("+llKey2Name(target)+")");
     // Sit the agent
     stop_anims(target);
     llStartAnimation(poseFalling);
@@ -126,9 +120,11 @@ grabSequence2(key target) {
     UpdateSitTarget(target, inTheSeat, llEuler2Rot(<-90.0,270.0,0.0> * DEG_TO_RAD));
     llStartAnimation(poseCouch);
     llMessageLinked(LINK_ROOT, 0, "Particles Off", target);
+    active = FALSE;
 }
 
 releaseSequence(key target) {
+    sayDebug("releaseSequence("+llKey2Name(target)+")");
     llMessageLinked(LINK_ROOT, 0, "Antigravity", target);
     UpdateSitTarget(target, inTheSeat, ZERO_ROTATION);
     stop_anims(target);
@@ -141,6 +137,7 @@ releaseSequence(key target) {
     llSay(rlvChannel, rlvCommand);
     rlvCommand = "release," + (string)target + ",@unsit=force";
     llSay(rlvChannel, rlvCommand);
+    active = FALSE;
 }
 
 // ===================================================================================
@@ -165,29 +162,28 @@ default
     link_message(integer sender_num, integer num, string message, key target) {
         sayDebug("link_message ("+(string)sender_num+", "+(string)num+", "+message+", "+llKey2Name(target)+")");
         if (message == "RESET") {
-            string rlvCommand = "release," + (string)target + ",@unsit=y";
+            sayDebug("link_message RESET releasing "+llKey2Name(myVictim));
+            string rlvCommand = "release," + (string)myVictim + ",@unsit=y";
             llSay(rlvChannel, rlvCommand);
-            rlvCommand = "release," + (string)target + ",@unsit=force";
+            rlvCommand = "release," + (string)myVictim + ",@unsit=force";
             llSay(rlvChannel, rlvCommand);
             stop_anims(llAvatarOnSitTarget());
             llUnSit(llAvatarOnSitTarget());
             llResetScript();
         } else if (message == "GRAB") {
-            grabSequence1(target);
+            active = TRUE;
+            myVictim = target;
+            sayDebug("link_message GRAB myVictim:"+llKey2Name(myVictim));
+            grabSequence1(myVictim);
         } else if (message == "RELEASE") {
-            releaseSequence(target);
+            active = TRUE;
+            sayDebug("link_message RELEASE myVictim:"+llKey2Name(myVictim));
+            releaseSequence(myVictim);
         }
     }
 
-    sensor(integer total_number) {
-        key agent = llDetectedKey(0);
-        sayDebug("sensor "+llDetectedName(0));
-        llSleep(3);
-        grabSequence1(agent);
-    }
-    
     changed(integer change){
-        if (change & CHANGED_LINK) {
+        if (active && (change & CHANGED_LINK)) {
             key agent = llAvatarOnSitTarget();
             if (agent) {
                 llRequestPermissions(agent, PERMISSION_TRIGGER_ANIMATION);
@@ -208,19 +204,14 @@ default
 
     run_time_permissions(integer permissions)
     {
-        if (permissions & PERMISSION_TRIGGER_ANIMATION)
+        if (active && (permissions & PERMISSION_TRIGGER_ANIMATION))
         {
             key agent = llGetPermissionsKey();
-            if (llGetAgentSize(agent) != ZERO_VECTOR)
-            { // agent is still in the sim.
-                llMessageLinked(LINK_ROOT, llGetLinkNumber(), "GRABBED", agent);
-                grabSequence2(agent);
+            if (llGetAgentSize(agent) != ZERO_VECTOR) { 
+                // agent is still in the sim.
+                llMessageLinked(LINK_ROOT, llGetLinkNumber(), "GRABBED", myVictim);
+                grabSequence2(myVictim);
             }
         }
-        else
-        {
-            llResetScript();
-        }
     }
-
 }
