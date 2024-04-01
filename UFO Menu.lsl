@@ -21,7 +21,7 @@ string PILOT = "Pilot";
 string RELEASE = "Release";
 string REPORT = "Report";
 string SCAN = "Scan";
-string SETFLIGHT = "SetFlight";
+string SETFLIGHTMODE = "SetFlightMode";
 string THIRD = "Third";
 string VIEW = "View";
 
@@ -38,22 +38,26 @@ integer CLOSED = 0;
 integer OPEN = 1;
 integer gHatchTopState = -1;
 integer gHatchBottomState = -1;
+integer gFlightMode;
+integer FLIGHT_MANUAL = 1;
+integer FLIGHT_OFF = 0;
+integer FLIGHT_AUTO = -1;
 
-string Flight;
 integer integer_increment = -1;
 
 key gOwnerKey; 
 string gOwnerName;
 key gToucher;
-key Pilot;
+key gPilot;
 float humVolume=1.0;
 string instructionNote = "Orbital Prisoner Transport Shuttle";
 key id;
 
-list scan_target_names;
+list couch_links;
 list scan_target_keys;
-list passenger_names;
-list passenger_keys;
+list scan_target_names;
+list couch_passenger_keys = [NULL_KEY, NULL_KEY, NULL_KEY, NULL_KEY];
+list couch_passenger_names = ["", "", "", ""];
 
 sayDebug(string message)
 {
@@ -63,33 +67,55 @@ sayDebug(string message)
     }
 }
 
-sendJSON(string jsonKey, string value, key avatarKey){
-    sayDebug("sendJSON("+jsonKey+", "+value+")");
-    llMessageLinked(LINK_SET, 0, llList2Json(JSON_OBJECT, [jsonKey, value]), avatarKey);
+integer getLinkWithName(string name) {
+    integer i = llGetLinkNumber() != 0;   // Start at zero (single prim) or 1 (two or more prims)
+    integer x = llGetNumberOfPrims() + i; // [0, 1) or [1, llGetNumberOfPrims()]
+    integer result = -1;
+    for (; i < x; ++i)
+        if (llGetLinkName(i) == name) {
+            result = i; // Found it! Exit loop early with result
+        }
+    //sayDebug("getLinkWithName("+name+") returns "+(string)result);
+    return result; // No prim with that name, return -1.
 }
 
-sendJSONinteger(string jsonKey, integer value, key avatarKey){
-    llMessageLinked(LINK_SET, 0, llList2Json(JSON_OBJECT, [jsonKey, (string)value]), avatarKey);
-}
-
-string getJSONstring(string jsonValue, string jsonKey, string valueNow){
-    string result = valueNow;
-    string value = llJsonGetValue(jsonValue, [jsonKey]);
-    if (value != JSON_INVALID) {
-        result = value;
+integer assignCouch(key target) {
+    // find the first couch that's empty
+    // assign the key to that couch
+    // return the link number that will have this
+    integer i;
+    for (i = 0; i < 4; i = i + 1) {
+        key theKey = llList2Key(couch_passenger_keys, i);
+        sayDebug("assignCouch "+(string)i+" "+(string)theKey);
+        if (theKey == NULL_KEY) {
+            couch_passenger_keys = llListReplaceList(couch_passenger_keys, [target], i, i);
+            couch_passenger_names = llListReplaceList(couch_passenger_names, [llKey2Name(target)], i, i);
+            integer link = llList2Integer(couch_links, i);
+            sayDebug("assignCouch("+llKey2Name(target)+") returns "+(string)link);
+            return link;
+        }
     }
-    return result;
+    return 99;
 }
 
-integer getJSONinteger(string jsonValue, string jsonKey, integer valueNow){
-    integer result = valueNow;
-    string value = llJsonGetValue(jsonValue, [jsonKey]);
-    if (value != JSON_INVALID) {
-        result = (integer)value;
+integer freeCouch(key target) {
+    // find the couch that has this key in it
+    // free up the key list and the name list
+    // return the link number that had this
+    integer i;
+    for (i = 0; i < 4; i = i + 1) {
+        key theKey = llList2Key(couch_passenger_keys, i);
+        sayDebug("freeCouch "+(string)i+" "+(string)theKey);
+        if (llList2Key(couch_passenger_keys, i) == target) {
+            couch_passenger_keys = llListReplaceList(couch_passenger_keys, [NULL_KEY], i, i);
+            couch_passenger_names = llListReplaceList(couch_passenger_names, [""], i, i);            
+            integer link = llList2Integer(couch_links, i);
+            sayDebug("freeCouch("+llKey2Name(target)+") returns "+(string)link);
+            return link;
+        }
     }
-    return result;
+    return 99;
 }
-
 
 report() {
     vector vPosition = llGetPos();
@@ -197,13 +223,13 @@ doMainMenu(integer CHANNEL, string name, key id, string msg) {
     } else if (msg == REPORT) {
         report();
     } else if (msg == "Open Cupola") {
-        sendJSON("Cupola", "Open", id);
+        llMessageLinked(LINK_SET, OPEN, "Cupola", NULL_KEY);
     } else if (msg == "Close Cupola") {
-        sendJSON("Cupola", "Close", id);
+        llMessageLinked(LINK_SET, CLOSED, "Cupola", NULL_KEY);
     } else if (msg == "Open Bottom") {
-        sendJSON("Bottom", "Open", id);
+        llMessageLinked(LINK_SET, OPEN, "Bottom", NULL_KEY);
     } else if (msg == "Close Bottom") {
-        sendJSON("Bottom", "Close", id);
+        llMessageLinked(LINK_SET, CLOSED, "Bottom", NULL_KEY);
     } else if (msg == SCAN) {
         scan_target_names = [];
         scan_target_keys = [];
@@ -213,11 +239,11 @@ doMainMenu(integer CHANNEL, string name, key id, string msg) {
     } else if (msg == RELEASE) {
         releaseMenu(id);
     } else if (msg == MANUAL) {
-        Flight = MANUAL;
-        sendJSON(SETFLIGHT, MANUAL, id);
+        gFlightMode = FLIGHT_MANUAL;
+        llMessageLinked(LINK_SET, FLIGHT_MANUAL, SETFLIGHTMODE, NULL_KEY);
     } else if (msg == AUTO) {
-        Flight = AUTO;
-        sendJSON(SETFLIGHT, AUTO, id);
+        gFlightMode = FLIGHT_AUTO;
+        llMessageLinked(LINK_SET, FLIGHT_AUTO, SETFLIGHTMODE, NULL_KEY);
     } else {
         sayDebug("Unhandled main menu item:"+msg);
     } 
@@ -232,22 +258,22 @@ viewMenu(key pilot) {
 doViewMenu(integer CHANNEL, string name, key id, string msg) {
     sayDebug("doViewMenu "+msg);
     tearDownMenu();
-    sendJSON(VIEW, msg, id);
+    llMessageLinked(LINK_SET, (integer)msg, VIEW+msg, id);
 }
 
-flightMenu(key pilot) {
+manualFlightMenu(key pilot) {
     string message = "UFO Flight menu:\nSelect Flight Power";
     list buttons = ["Stop","1%","2%","5%","10%","20%","50%","100%","Report"];
     setUpMenu(MANUAL, pilot, message, buttons); 
 }
 
-doFlightMenu(integer CHANNEL, string name, key id, string msg) {
-    sayDebug("doFlightMenu "+msg);
+doManualFlightMenu(integer CHANNEL, string name, key id, string msg) {
+    sayDebug("doManualFlightMenu "+msg);
     tearDownMenu();
     if (msg == "Stop"){
         integer_increment = -1;
-        Flight = "";
-        sendJSON(SETFLIGHT,Flight, id);
+        gFlightMode = FLIGHT_OFF;
+        llMessageLinked(LINK_SET, FLIGHT_OFF, SETFLIGHTMODE, id);
         return;
     } else if (msg == "Report") {
         report();
@@ -267,7 +293,8 @@ doFlightMenu(integer CHANNEL, string name, key id, string msg) {
     } else if (msg == "100%") {
         integer_increment = 100;
     }
-    sendJSONinteger("Increment",integer_increment, id);
+    sayDebug("doManualFlightMenu sending "+MANUAL+" "+(string)integer_increment);    
+    llMessageLinked(LINK_SET, integer_increment, MANUAL, id);
 }
 
 autoMenu(key pilot) {
@@ -297,15 +324,11 @@ releaseMenu(key pilot) {
     string message = "Select Passenger to Release:";
     list buttons = [];
     integer i = 0;
-    for (i = 0; i < llGetListLength(passenger_names); i = i + 1) {
-        message = message + "\n" + (string)i + " " + llList2String(passenger_names, i);
+    for (i = 0; i < llGetListLength(couch_passenger_names); i = i + 1) {
+        message = message + "\n" + (string)i + " " + llList2String(couch_passenger_names, i);
         buttons = buttons + [(string)i];
     }
     setUpMenu(RELEASE, pilot, message, buttons); 
-}
-
-doReleaseMenu(integer CHANNEL, string name, key id, string msg) {
-    sendJSON(RELEASE, "Open", id);
 }
 
 default
@@ -315,16 +338,19 @@ default
         sayDebug("MainMenu: state_entry");
         gOwnerKey = llGetOwner();
         gOwnerName = llKey2Name(llGetOwner());
-        Flight = "";
+        gFlightMode = FLIGHT_OFF;
         
         llPreloadSound(gHumSound);
         llLoopSound(gHumSound, humVolume);
         
-        scan_target_names = ["Huey","Dewey","Louie"];
-        scan_target_keys = [NULL_KEY,NULL_KEY,NULL_KEY];
-        passenger_names = ["Dewey","Cheatham","Howe"];
-        passenger_keys = [NULL_KEY,NULL_KEY,NULL_KEY];
-
+        integer i;
+        for (i = 0; i < 4; i = i + 1) {
+            string couchName = "Passenger Couch "+(string)i;
+            integer link = getLinkWithName(couchName);
+            //sayDebug("state_entry i:"+(string)i+" '"+couchName+"' "+(string)link);
+            couch_links = couch_links + [link];
+        }
+        
         // mass compensator
         float mass = llGetMass(); // mass of this object
         float gravity = 9.8; // gravity constant
@@ -333,14 +359,14 @@ default
 
     touch_start(integer total_number)
     {
-        sayDebug("touch_start.  Flight:"+Flight);
+        sayDebug("touch_start.  gFlightMode:"+(string)gFlightMode);
         key pilot = llDetectedKey(0);
         if (llSameGroup(pilot))
         {
-            if (Flight == "") {
+            if (gFlightMode == FLIGHT_OFF) {
                 mainMenu(pilot); 
-            } else if (Flight == MANUAL) {
-                flightMenu(pilot);
+            } else if (gFlightMode == FLIGHT_MANUAL) {
+                manualFlightMenu(pilot);
             }
         }
         else
@@ -356,30 +382,56 @@ default
         } else if (menuIdentifier == VIEW) {
             doViewMenu(CHANNEL, name, id, msg);
         } else if (menuIdentifier == MANUAL) {
-            doFlightMenu(CHANNEL, name, id, msg);
+            doManualFlightMenu(CHANNEL, name, id, msg);
         } else if (menuIdentifier == GRAB) {
-            sendJSON(GRAB, llList2String(scan_target_keys, (integer)msg), id);
+            key grabKey = llList2Key(scan_target_keys, (integer)msg);
+            integer link = assignCouch(grabKey);
+            sayDebug("listen GRAB "+(string)link+" "+llKey2Name(grabKey));
+            llMessageLinked(LINK_SET, link, "GRAB", grabKey);
         } else if (menuIdentifier == RELEASE) {
-            sendJSON(RELEASE, llList2String(passenger_keys, (integer)msg), id);
+            key releaseKey = llList2Key(couch_passenger_keys, (integer)msg);
+            llMessageLinked(LINK_SET, freeCouch(releaseKey),"RELEASE", releaseKey);
         } 
     }
 
     link_message(integer sender_num, integer num, string msg, key id) 
     {
         sayDebug("link_message("+(string)msg+")");
-        gHatchTopState = getJSONinteger(msg, "CupolaIs", gHatchTopState);
-        gHatchBottomState = getJSONinteger(msg, "BottomIs", gHatchBottomState);
+        if (msg == "CupolaIs") {
+            gHatchTopState = num;
+        }
+        if (msg == "BottomIs") {
+            gHatchBottomState = num;
+        }
+        if (msg == "PilotIs") {
+            gPilot = id;
+            if (gPilot == NULL_KEY) {
+                gFlightMode = FLIGHT_OFF;
+                llMessageLinked(LINK_SET, FLIGHT_OFF, SETFLIGHTMODE, NULL_KEY);
+            }
+        }
+        sayDebug("link_message gPilot:"+(string)gPilot);
     }
 
     sensor(integer avatars_found) {
+        sayDebug("sensor("+(string)avatars_found+")");
+        sayDebug("sensor gPilot:"+(string)gPilot);
+        scan_target_keys = [];
+        scan_target_names = [];
         integer i;
+        sayDebug("sensor couch_passenger_keys:"+(string)couch_passenger_keys);
         for (i = 0; i < avatars_found; i = i + 1) {
             key target = llDetectedKey(i);
-            string name = llGetDisplayName(target);
-            scan_target_keys = scan_target_keys + [(string)target];
-            scan_target_names = scan_target_names + [name];
+            llMessageLinked(LINK_SET, 0, "Scan", target);
+            sayDebug("sensor target "+(string)i+" is "+llKey2Name(target));
+            if ((target != (key)gPilot) && (llListFindList(couch_passenger_keys, [target]) == -1)) {
+                string name = llGetDisplayName(target);
+                scan_target_keys = scan_target_keys + [(string)target];
+                scan_target_names = scan_target_names + [name];
+            }
+            llSleep(2);
         }
-        llWhisper(0,(string)i+" tagrets detected.");
+        llWhisper(0,(string)llGetListLength(scan_target_keys)+" tagrets detected.");
     }
 
     timer()
