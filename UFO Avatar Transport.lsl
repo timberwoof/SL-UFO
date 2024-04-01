@@ -10,13 +10,6 @@ integer rlvChannel = -1812221819; // RLVRS
 float Zoffset;
 float timerGrain = 0.1;
 float speed = 1.0; // meter/second
-float controlDelay = 1;
-vector avatarStartPosition;
-vector avatarEndPosition;
-vector avatarResetPosition;
-vector avatarPosition;
-vector avatarDirection;
-rotation avatarRotation;
 key gAgent;
 vector gInitialTargetPosition;
 vector entranceThrehshold = <1.5, 0, 0>;
@@ -97,6 +90,7 @@ moveAvatar(vector from, vector to, float speed) {
 
 grabSequence1(key target) {
     llMessageLinked(LINK_ALL_OTHERS, 0, "Antigravity", target);
+    llSleep(3);
     // get location of the target
     vector targetRegionPos = llList2Vector(llGetObjectDetails(target, [OBJECT_POS]), 0);
     vector seatRegionPos = llList2Vector(llGetPrimitiveParams([PRIM_POSITION]), 0);
@@ -110,7 +104,6 @@ grabSequence1(key target) {
     llSay(rlvChannel, rlvCommand);
     rlvCommand = "carry," + (string)target + ",@unsit=n";
     llSay(rlvChannel, rlvCommand);
-
 }
 
 grabSequence2(key target) {
@@ -133,10 +126,6 @@ grabSequence2(key target) {
     UpdateSitTarget(inTheSeat, llEuler2Rot(<-90.0,270.0,0.0> * DEG_TO_RAD));
     llStartAnimation(poseCouch);
     llMessageLinked(LINK_ALL_OTHERS, 0, "Particles Off", target);
-    
-    // *** deugfor no
-    llSleep(15);
-    releaseSequence(target);
 }
 
 releaseSequence(key target) {
@@ -159,27 +148,27 @@ default
 {
     state_entry() 
     {
-        // *** debug ***
-        string rlvCommand = "carry," + (string)llGetOwner() + ",@unsit=y";
-        llSay(rlvChannel, rlvCommand);
-        
         llSetText("",<1,1,1>,1);
-        llSetSitText( "Sit" );
+        llSetSitText("");
+        llSitTarget(ZERO_VECTOR, ZERO_ROTATION);
+        llSetCameraEyeOffset(ZERO_VECTOR); // where the camera is
+        llSetCameraAtOffset(ZERO_VECTOR); // where it's looking
+        //llSetSitText("Grab Me");
         // vertical, forward/back, left/right
-        llSitTarget(<-0.25, -0.2, -0.4>, llEuler2Rot(<-90.0,270.0,0.0> * DEG_TO_RAD));
-        llSetCameraEyeOffset(<-1.20, 0.1, 0.0>); // where the camera is
-        llSetCameraAtOffset(<1.0, 1.0, 0.0>); // where it's looking
+        //llSitTarget(<-0.25, -0.2, -0.4>, llEuler2Rot(<-90.0,270.0,0.0> * DEG_TO_RAD));
+        //llSetCameraEyeOffset(<-1.20, 0.1, 0.0>); // where the camera is
+        //llSetCameraAtOffset(<1.0, 1.0, 0.0>); // where it's looking
         llMessageLinked(LINK_ALL_OTHERS, 0, "Particles Off", NULL_KEY);
     }
     
     touch_start(integer total_number)
     {
-        // *** debug and development ***
-        // *** this will be removed onc this is all working ***
-        gAgent = llDetectedKey(0);
-        sayDebug("touch_start "+llDetectedName(0));
-        llMessageLinked(LINK_ALL_OTHERS, 0, "Scan", gAgent);
-        llSensor("", gAgent, AGENT, 20, PI);
+        if (OPTION_DEBUG) {
+            gAgent = llDetectedKey(0);
+            sayDebug("touch_start "+llDetectedName(0));
+            llMessageLinked(LINK_ALL_OTHERS, 0, "Scan", gAgent);
+            llSensor("", gAgent, AGENT, 20, PI);
+        }
     }
     
     link_message(integer sender_num, integer num, string message, key target) {
@@ -190,6 +179,10 @@ default
             stop_anims(llAvatarOnSitTarget());
             llUnSit(llAvatarOnSitTarget());
             llResetScript();
+        } else if ((message == "GRAB") && (num == llGetLinkNumber())) {
+            grabSequence1(target);
+        } else if ((message == "RELEASE") && (num == llGetLinkNumber())) {
+            releaseSequence(target);
         }
     }
 
