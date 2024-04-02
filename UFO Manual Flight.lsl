@@ -1,6 +1,6 @@
 // UFO Manual Flight
 
-integer OPTION_DEBUG = TRUE;
+integer OPTION_DEBUG = FALSE;
 string SETFLIGHTMODE = "SetFlightMode";
 string FLIGHTIS = "FlightIs";
 string MANUAL = "Manual";
@@ -20,16 +20,15 @@ string gHumSound = "46157083-3135-fb2a-2beb-0f2c67893907";
 // **********************
 // physical manual flight
 float LINEAR_TAU = 0.75;     
-float TARGET_INCREMENT = 0.5;
+float TARGET_INCREMENT = 0.0;
 float ANGULAR_TAU = 1.5;
 float ANGULAR_DAMPING = 0.85;
-float THETA_INCREMENT = 0.3;
+float THETA_INCREMENT = 0.8;
 vector pos;
 vector face;
 float brake = 0.5;
 vector POSITION; 
 integer auto=FALSE;
-integer CHANNEL = 6;
 
 float gLastMessage;
 
@@ -41,28 +40,12 @@ sayDebug(string message)
     }
 }
 
-travelTo(list destinationsList){
-    while (llGetListLength(destinationsList) > 0) {
-        vector NextCoord = llList2Vector(destinationsList,0);
-        vector NextRot = llList2Vector(destinationsList,1);
-        float time = llList2Float(destinationsList,2);
-        destinationsList = llDeleteSubList(destinationsList,0,2);
-        llRotLookAt(llEuler2Rot(NextRot * DEG_TO_RAD),1.5,0.2);
-        llMoveToTarget(NextCoord,time);
-        while (llVecDist(llGetPos(), NextCoord) > 5.0) {
-            llSleep(0.2);
-        }
-    }
-}
-
 stop() {
     TARGET_INCREMENT = 0.0;
     auto=FALSE;
-    //llSleep(1.5);
     llStopSound();
     llSetStatus(STATUS_PHYSICS, FALSE);
     llSetStatus(STATUS_PHANTOM, FALSE);
-    //llMessageLinked(LINK_ALL_CHILDREN, 0, "stop", NULL_KEY);
     llSetTimerEvent(0.0);
     llReleaseControls();
     llWhisper(0,"Stopped.");
@@ -75,7 +58,6 @@ default
         sayDebug("default state_entry");
         Flight = "";
         llSetTimerEvent(0.0);
-        //llMessageLinked(LINK_ALL_CHILDREN, 0, "stop", NULL_KEY); / shut off engines
         llSetLinkPrimitiveParamsFast(LINK_ROOT,
                 [PRIM_LINK_TARGET, LINK_ALL_CHILDREN,
                 PRIM_PHYSICS_SHAPE_TYPE, PRIM_PHYSICS_SHAPE_PRIM]);
@@ -85,12 +67,18 @@ default
         llSetStatus(STATUS_PHANTOM, FALSE);
         llMoveToTarget(llGetPos(), 0);
         llRotLookAt(llGetRot(), 0, 0);
+        // mass compensator
+        // This thing flies like a telephoe booth. 
+        //float mass = llGetMass(); // mass of this object
+        //float gravity = 9.8; // gravity constant
+        //llSetForce(mass * <0,0,gravity>, FALSE); // in global orientation
         sayDebug("default state_entry done");
     }
 
     link_message(integer sender_num, integer num, string msg, key id) 
     {
         //sayDebug("default link_message num:"+(string)num+" msg:"+msg);
+        // When the pilot chair gets a sitter, we want to know who it is
         if (msg == "PilotIs") {
             Pilot = id;
             sayDebug("default link_message PilotIs:"+llKey2Name(Pilot));
@@ -105,8 +93,6 @@ default
     }
 }
 
-
-
 state StateFlying
 {
 
@@ -116,8 +102,6 @@ state StateFlying
 
         llRequestPermissions(Pilot, PERMISSION_TAKE_CONTROLS);
         llRotLookAt(llGetRot(), ANGULAR_TAU, 1.0);
-
-        llListen(CHANNEL, "", "", "");
 
         llSetLinkPrimitiveParamsFast(LINK_ROOT,
                 [PRIM_PHYSICS_SHAPE_TYPE, PRIM_PHYSICS_SHAPE_PRIM,
@@ -130,24 +114,33 @@ state StateFlying
         llMoveToTarget(llGetPos(), LINEAR_TAU);
 
         gLastMessage = llGetTime();
+        // Mass compensator
         float mass = llGetMass(); // mass of this object
         float gravity = 9.8; // gravity constant
         llSetForce(mass * <0,0,gravity>, FALSE); // in global orientation
-        TARGET_INCREMENT = 0.1;
+        TARGET_INCREMENT = 0.0;
         llWhisper(0,"StateFlying state_entry complete");
     } // end state_entry
             
     link_message(integer sender_num, integer num, string msg, key id) 
     {
         if (msg == MANUAL) {
-            if (num >= 0) {
-                TARGET_INCREMENT = num / 100.0;
+            if (num > 0) {
+                // num can vary from 0 to 100. 
+                // TARGET_INCREMENT must vary between 0.1 amd 10
+                // to match performance of the other ships. 
+                TARGET_INCREMENT = num * 0.1;
                 sayDebug("StateFlying link_message num:"+(string)num+" TARGET_INCREMENT:"+(string)TARGET_INCREMENT);
-                llWhisper(0,"Power: " + llGetSubString((string)(TARGET_INCREMENT * 1000.0),0,3) + "%");
+                llWhisper(0,"Power: " +(string)num + "%");
             } else {
                 sayDebug("StateFlying link_message setting state default");
+                llWhisper(0,"Power OFF");
                 state default;
             }
+        } else if ((msg == SETFLIGHTMODE) && (num == FLIGHT_OFF)){
+            sayDebug("StateFlying link_message setting state default");
+            llWhisper(0,"Power OFF");
+            state default;
         }
     }
 
@@ -164,7 +157,6 @@ state StateFlying
             llWhisper(0,"Stopped");
             llSetTimerEvent(0.0);
             llSleep(1.5);
-            //llResetScript(); // there's got to be a better way to do this
         }
     }
     
