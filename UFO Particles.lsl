@@ -1,5 +1,5 @@
 // UFO Particles
-integer OPTION_DEBUG = TRUE;
+integer OPTION_DEBUG = FALSE;
 string particles;
 string tagret;
 
@@ -12,15 +12,6 @@ sayDebug(string message)
     {
         llOwnerSay("UFO Particles: "+message);
     }
-}
-
-string getJSONstring(string jsonValue, string jsonKey, string valueNow){
-    string result = valueNow;
-    string value = llJsonGetValue(jsonValue, [jsonKey]);
-    if (value != JSON_INVALID) {
-        result = value;
-    }
-    return result;
 }
 
 scan(key target) {
