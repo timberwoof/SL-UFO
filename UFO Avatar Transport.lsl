@@ -2,6 +2,42 @@
 // Moving avatars around in the UFO and to and from the ground. 
 // Includes sit, poses, RLV, and particle effects. 
 
+// Idealized Happy Path
+// Startup
+// Sets no sit point because that gets set later
+// There's no sit-text becuse this is not intended to work that way. 
+// It does set an eyepoint, above the couch so you see yourself and the other victims
+//
+// LinkMessage "GRAB"
+// Menu script sends a message to this link with "GRAB" and and the id of the avatar to grab.
+//
+// grabSequence1
+// sets active and the victim avatars' UUID.
+// starts antigravity particles streaming toward the victim
+// Calculates the target's relative coordinates and sets them as the sit point
+// Sends RLV command to the avatar to sit.
+//
+// RLV relay makes the avatar sit.
+//
+// changed event requests sit permissions
+//
+// run_time_permissions event starts grabSequence2
+//
+// grabSequence2 starts the pose animation 
+// moves the avatar up onto the couch, 
+// sets the stand-straight animation
+// stops the antigravity particles
+// sets script to "inactive" 
+// It hast to set active to false so that when 
+// changed and runtime_permissions events come in for another couch, 
+// this couch will ignore them. 
+//
+// LinkMessage "RELEASE" 
+// starts the antigravity particles
+// sets the falling tumbline animation
+// moves the avatart to some set distance below the UFO
+// undoes all the RLV restrictions
+
 string poseFalling = "Misc-Shy-Falling Pneumatic Tube";
 string poseCouch = "Stand straight";
 
@@ -13,13 +49,14 @@ integer rlvChannel = -1812221819; // RLVRS
 float Zoffset;
 float timerGrain = 0.1;
 float speed = 1.0; // meter/second
-vector gInitialTargetPosition;
-vector entranceThrehshold = <1.5, 0, 0>;
-vector highinsideUFO = <1.25, 1.5, 0>;
-vector inTheSeat = <-0.25, -0.2, -0.4>;
-vector releasePosition = <6, -5, 0>;
+vector gInitialTargetPosition; // where the avatar is when the grab sequence starts
+// locations relative to each couch 
+vector entranceThrehshold = <1.5, 0, 0>; // just below the UFO
+vector highinsideUFO = <1.25, 1.5, 0>; // below the pilot's butt
+vector inTheSeat = <-0.25, -0.2, -0.4>; // in the couch
+vector releasePosition = <6, -5, 0>; // about 10 meters bwlow the UFO
 
-integer OPTION_DEBUG = TRUE;
+integer OPTION_DEBUG = FALSE;
 sayDebug(string message)
 {
     if (OPTION_DEBUG)
@@ -40,10 +77,12 @@ stop_anims(key agent)
     }
 }
 
-//Sets / Updates the sit target moving the avatar on it if necessary.
+// Moves the seated avatar "tagget" to relative position pos and rotation rot
+//Written by Strife Onizuka, size adjustment and improvements provided by Talarus Luan
+//Adjusted for being a specific prim by Tuimberwoof Lupindo
 UpdateSitTarget(key target, vector pos, rotation rot) {
     //Using this while the object is moving may give unpredictable results.
-    llSitTarget(pos, rot);//Set the sit target -- why? 
+    // we need to determine the link number of the seated avatar. 
     integer linkNum;
     for (linkNum = llGetObjectPrimCount(llGetKey()); linkNum <= llGetNumberOfPrims(); linkNum = linkNum + 1) {
         if(target == llGetLinkKey(linkNum)) {
@@ -60,9 +99,9 @@ UpdateSitTarget(key target, vector pos, rotation rot) {
         }
     }
 
-//Written by Strife Onizuka, size adjustment and improvements provided by Talarus Luan
-//Adjusted for being a specific prim by Tuimberwoof Lupindo
-
+// moves the avatar hopefully seated on this prim
+// from from to to at speed speed. 
+// Calculates the distance, the desired delta, and the loops on UpdateSitTarget. 
 moveAvatar(key target, vector from, vector to, float speed) {
     float interval = 0.2; // seconds
     float stepDistance = speed * interval; // 0.5 meters per second at .2 sec per step
@@ -78,8 +117,11 @@ moveAvatar(key target, vector from, vector to, float speed) {
     }
 }
 
+// Innitiates the UFO grab sequence: sets sit point and starts RLV calls
 grabSequence1(key target) {
     sayDebug("grabSequence1("+llKey2Name(target)+")");
+    active = TRUE;
+    myVictim = target;
     llMessageLinked(LINK_ROOT, 0, "Antigravity", target);
     llSleep(3);
     // get location of the target
@@ -96,9 +138,11 @@ grabSequence1(key target) {
     rlvCommand = "carry," + (string)target + ",@unsit=n";
     llSay(rlvChannel, rlvCommand);
     
-    //Thread gets picked up at change where the avatar sits at the pickup point
+    // Thread gets picked up at event changed
+    // where the avatar sits at the pickup point
 }
 
+// does the animations and the movement, stops the particles
 grabSequence2(key target) {
     sayDebug("grabSequence2("+llKey2Name(target)+")");
     // Sit the agent
@@ -121,9 +165,12 @@ grabSequence2(key target) {
     llStartAnimation(poseCouch);
     llMessageLinked(LINK_ROOT, 0, "Particles Off", target);
     active = FALSE;
+    // we're done for now. 
 }
 
 releaseSequence(key target) {
+    // Moves the avatar to a point some ways down
+    // manages animations and particles
     sayDebug("releaseSequence("+llKey2Name(target)+")");
     llMessageLinked(LINK_ROOT, 0, "Antigravity", target);
     UpdateSitTarget(target, inTheSeat, ZERO_ROTATION);
@@ -137,7 +184,6 @@ releaseSequence(key target) {
     llSay(rlvChannel, rlvCommand);
     rlvCommand = "release," + (string)target + ",@unsit=force";
     llSay(rlvChannel, rlvCommand);
-    active = FALSE;
 }
 
 // ===================================================================================
@@ -146,17 +192,10 @@ default
     state_entry() 
     {
         myLinkNum = llGetLinkNumber();
-        llSetText("",<1,1,1>,1);
-        llSetSitText("");
         llSitTarget(ZERO_VECTOR, ZERO_ROTATION);
-        llSetCameraEyeOffset(ZERO_VECTOR); // where the camera is
-        llSetCameraAtOffset(ZERO_VECTOR); // where it's looking
-        //llSetSitText("Grab Me");
         // vertical, forward/back, left/right
-        //llSitTarget(<-0.25, -0.2, -0.4>, llEuler2Rot(<-90.0,270.0,0.0> * DEG_TO_RAD));
-        //llSetCameraEyeOffset(<-1.20, 0.1, 0.0>); // where the camera is
-        //llSetCameraAtOffset(<1.0, 1.0, 0.0>); // where it's looking
-        //llMessageLinked(LINK_ROOT, 0, "Particles Off", NULL_KEY);
+        llSetCameraEyeOffset(<-1.20, 0.1, 0.0>); // where the camera is
+        llSetCameraAtOffset(<1.0, 1.0, 0.0>); // where it's looking
     }
     
     link_message(integer sender_num, integer num, string message, key target) {
@@ -171,12 +210,9 @@ default
             llUnSit(llAvatarOnSitTarget());
             llResetScript();
         } else if (message == "GRAB") {
-            active = TRUE;
-            myVictim = target;
             sayDebug("link_message GRAB myVictim:"+llKey2Name(myVictim));
-            grabSequence1(myVictim);
+            grabSequence1(target);
         } else if (message == "RELEASE") {
-            active = TRUE;
             sayDebug("link_message RELEASE myVictim:"+llKey2Name(myVictim));
             releaseSequence(myVictim);
         }
@@ -187,8 +223,10 @@ default
             key agent = llAvatarOnSitTarget();
             if (agent) {
                 llRequestPermissions(agent, PERMISSION_TRIGGER_ANIMATION);
+                // thread gets picked up at run_time_permissions
             } else {    // Stood up (or maybe crashed!)
-                // Get agent to whom permissions were granted
+                // Get agent to whom permissions were granted.
+                // We're probably hosed and might need to restart the script. 
                 agent = llGetPermissionsKey();
                 llMessageLinked(LINK_ROOT, llGetLinkNumber(), "LOST", agent);
                 if (llGetAgentSize(agent) != ZERO_VECTOR) {
