@@ -54,7 +54,7 @@ vector gInitialTargetPosition; // where the avatar is when the grab sequence sta
 vector entranceThrehshold = <1.5, 0, 0>; // just below the UFO
 vector highinsideUFO = <1.25, 1.5, 0>; // below the pilot's butt
 vector inTheSeat = <-0.25, -0.2, -0.4>; // in the couch
-vector releasePosition = <6, -5, 0>; // about 10 meters bwlow the UFO
+vector releasePosition = <3, -2.5, 0>; // about 10 meters bwlow the UFO
 
 integer OPTION_DEBUG = FALSE;
 sayDebug(string message)
@@ -177,13 +177,31 @@ releaseSequence(key target) {
     stop_anims(target);
     llStartAnimation(poseFalling);
     moveAvatar(target, inTheSeat, highinsideUFO, 0.5);
+    
+    releasePosition = llGetPos();
+    if (releasePosition.z < 100) {
+        float ground = llGround(ZERO_VECTOR);
+        float water = llWater(ZERO_VECTOR);
+        if (ground > water) {
+            releasePosition.z = ground + 2;
+        } else {
+            releasePosition.z = water + 2;
+        }
+    } else {
+        releasePosition.z = releasePosition.z - 3;
+    }
+    vector seatRegionPos = llList2Vector(llGetPrimitiveParams([PRIM_POSITION]), 0);
+    vector relativePos = releasePosition - seatRegionPos;
+    rotation relativeRot = llGetRot();
+    releasePosition = relativePos / relativeRot;
+    
     moveAvatar(target, highinsideUFO, releasePosition, 1.0);
     stop_anims(target);
     llMessageLinked(LINK_ROOT, 0, "Particles Off", target);
     string rlvCommand = "release," + (string)target + ",@unsit=y";
-    llSay(rlvChannel, rlvCommand);
+    llShout(rlvChannel, rlvCommand);
     rlvCommand = "release," + (string)target + ",@unsit=force";
-    llSay(rlvChannel, rlvCommand);
+    llShout(rlvChannel, rlvCommand);
 }
 
 // ===================================================================================
